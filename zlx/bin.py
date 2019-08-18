@@ -105,7 +105,13 @@ class io_pack_accessor (object):
     def check_range (self, offset, size):
         return offset >= 0 and (self.length is None or offset + size <= self.length)
 
-    def __getitem__ (self, offset):
+    def __getitem__ (self, index):
+        if isinstance(index, tuple):
+            offset, count = index
+            return tuple(self[offset + i * self.PACK_LEN] for i in range(count))
+        else:
+            offset = index
+
         if not self.check_range(offset, self.PACK_LEN):
             raise IndexError('out of range')
         return unpack_from_stream(self.stream, offset,
@@ -125,6 +131,20 @@ class io_accessor (object):
         self.disp = disp
         self.length = length
         return
+
+    def check_range (self, offset, size):
+        return offset >= 0 and (self.length is None or offset + size <= self.length)
+    def __getitem__ (self, index):
+        if isinstance(index, tuple):
+            offset, length = index
+            if not self.check_range(offset, length):
+                raise IndexError('out of range')
+            self.stream.seek(self.disp + offset)
+            return bytes(self.stream.read(length))
+        else:
+            return self.u8[index]
+# class io_accessor
+
 
 for a in PACK_ACC_LIST:
     n = 'io_accessor_' + a

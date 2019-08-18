@@ -53,11 +53,21 @@ def map_pe (input_path, output_path):
     zlx.io.bin_save(output_path, image)
     return
 
+def windump_info (input_path):
+    import zlx.windump
+    import zlx.io
+    with open(input_path, 'rb') as f:
+        dh = zlx.windump.parse_header(f)
+    print(repr(dh))
+    return
+
 if __name__ == '__main__':
     print(repr(sys.argv))
     if len(sys.argv) >= 2:
         if sys.argv[1] == 'map-pe':
             map_pe(sys.argv[2], sys.argv[3])
+        elif sys.argv[1] == 'windump-info':
+            windump_info(sys.argv[2])
     else:
         bin_test()
         io_test()
