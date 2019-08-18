@@ -60,10 +60,6 @@ class bin_pack_acc (object):
 
     pass # bin_pack_acc
 
-for a in PACK_ACC_LIST:
-    n = 'bin_acc_' + a
-    globals()[n] = type(n, (bin_pack_acc,), dict(PACK_FMT=PACK_FMT_DICT[a], PACK_LEN=PACK_LEN_DICT[a]))
-
 class accessor (object):
 
     __slots__ = 'data disp length'.split()
@@ -81,66 +77,11 @@ class accessor (object):
         else:
             return self.u8[index]
 
-    @property
-    def b (self):
-        return bin_acc_u8(self.data, self.disp, self.length)
-
-    @property
-    def u8 (self):
-        return bin_acc_u8(self.data, self.disp, self.length)
-
-    @property
-    def i8 (self):
-        return bin_acc_i8(self.data, self.disp, self.length)
-
-    @property
-    def u16le (self):
-        return bin_acc_u16le(self.data, self.disp, self.length)
-
-    @property
-    def u16be (self):
-        return bin_acc_u16be(self.data, self.disp, self.length)
-
-    @property
-    def i16le (self):
-        return bin_acc_i16le(self.data, self.disp, self.length)
-
-    @property
-    def i16be (self):
-        return bin_acc_i16be(self.data, self.disp, self.length)
-
-    @property
-    def u32le (self):
-        return bin_acc_u32le(self.data, self.disp, self.length)
-
-    @property
-    def u32be (self):
-        return bin_acc_u32be(self.data, self.disp, self.length)
-
-    @property
-    def i32le (self):
-        return bin_acc_i32le(self.data, self.disp, self.length)
-
-    @property
-    def i32be (self):
-        return bin_acc_i32be(self.data, self.disp, self.length)
-
-    @property
-    def u64le (self):
-        return bin_acc_u64le(self.data, self.disp, self.length)
-
-    @property
-    def u64be (self):
-        return bin_acc_u64be(self.data, self.disp, self.length)
-
-    @property
-    def i64le (self):
-        return bin_acc_i64le(self.data, self.disp, self.length)
-
-    @property
-    def i64be (self):
-        return bin_acc_i64be(self.data, self.disp, self.length)
-
+for a in PACK_ACC_LIST:
+    n = 'bin_acc_' + a
+    pa = type(n, (bin_pack_acc,), dict(PACK_FMT=PACK_FMT_DICT[a], PACK_LEN=PACK_LEN_DICT[a]))
+    globals()[n] = pa
+    setattr(accessor, a, property(lambda self, pa=pa: pa(self.data, self.disp, self.length)))
 
 def unpack_from_stream (stream, offset, pack_fmt, pack_len):
     stream.seek(offset)
