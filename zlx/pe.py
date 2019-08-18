@@ -247,6 +247,7 @@ def parse_pe_header (ba, offset):
     return peh
 
 def map_parsed_pe (ba, peh, arch_page_size = 4096):
+    if not isinstance(ba, zlx.bin.accessor): ba = zlx.bin.accessor(ba)
     align = peh.opt_hdr.section_alignment if zlx.int.pow2_check(peh.opt_hdr.section_alignment) else arch_page_size
     falign = peh.opt_hdr.file_alignment if zlx.int.pow2_check(peh.opt_hdr.file_alignment) else 1
     image_align = max(align, arch_page_size)

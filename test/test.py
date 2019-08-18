@@ -1,3 +1,4 @@
+import io
 import sys
 
 def bin_test ():
@@ -5,6 +6,16 @@ def bin_test ():
     a = zlx.bin.accessor(b'\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9', disp = 1, length = 8)
     assert a.u8[1] == 0xF2
     assert a.i8[1] == -14
+    return
+
+def io_test ():
+    import zlx.bin
+    a = zlx.bin.io_accessor(io.BytesIO())
+    a.u32be[0] = 0x30313233
+    a.u16be[1] = 0x4142
+    print(repr(a.stream.getvalue()))
+    assert a.stream.getvalue() == b'0AB3'
+    assert a.u32le[0] == 0x33424130
     return
 
 def record_test ():
@@ -44,10 +55,12 @@ def map_pe (input_path, output_path):
 
 if __name__ == '__main__':
     print(repr(sys.argv))
-    if len(sys.argv) >= 2 and sys.argv[1] == 'map-pe':
-        map_pe(sys.argv[2], sys.argv[3])
+    if len(sys.argv) >= 2:
+        if sys.argv[1] == 'map-pe':
+            map_pe(sys.argv[2], sys.argv[3])
     else:
         bin_test()
+        io_test()
         record_test()
         pe_test()
 

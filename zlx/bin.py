@@ -47,6 +47,9 @@ class bin_pack_acc (object):
         return
 
     def __getitem__ (self, offset = 0):
+        if isinstance(offset, tuple) and len(offset) == 2:
+            offset, count = offset
+            return tuple(self[offset + i * self.__class__.PACK_LEN] for i in range(count))
         if offset < 0 or offset > self.length - self.__class__.PACK_LEN: raise IndexError(offset)
         return struct.unpack_from(self.__class__.PACK_FMT, self.data, self.disp + offset)[0]
 
@@ -79,63 +82,113 @@ class accessor (object):
             return self.u8[index]
 
     @property
-    def b (self): 
+    def b (self):
         return bin_acc_u8(self.data, self.disp, self.length)
 
     @property
-    def u8 (self): 
+    def u8 (self):
         return bin_acc_u8(self.data, self.disp, self.length)
 
     @property
-    def i8 (self): 
+    def i8 (self):
         return bin_acc_i8(self.data, self.disp, self.length)
 
     @property
-    def u16le (self): 
+    def u16le (self):
         return bin_acc_u16le(self.data, self.disp, self.length)
 
     @property
-    def u16be (self): 
+    def u16be (self):
         return bin_acc_u16be(self.data, self.disp, self.length)
 
     @property
-    def i16le (self): 
+    def i16le (self):
         return bin_acc_i16le(self.data, self.disp, self.length)
 
     @property
-    def i16be (self): 
+    def i16be (self):
         return bin_acc_i16be(self.data, self.disp, self.length)
 
     @property
-    def u32le (self): 
+    def u32le (self):
         return bin_acc_u32le(self.data, self.disp, self.length)
 
     @property
-    def u32be (self): 
+    def u32be (self):
         return bin_acc_u32be(self.data, self.disp, self.length)
 
     @property
-    def i32le (self): 
+    def i32le (self):
         return bin_acc_i32le(self.data, self.disp, self.length)
 
     @property
-    def i32be (self): 
+    def i32be (self):
         return bin_acc_i32be(self.data, self.disp, self.length)
 
     @property
-    def u64le (self): 
+    def u64le (self):
         return bin_acc_u64le(self.data, self.disp, self.length)
 
     @property
-    def u64be (self): 
+    def u64be (self):
         return bin_acc_u64be(self.data, self.disp, self.length)
 
     @property
-    def i64le (self): 
+    def i64le (self):
         return bin_acc_i64le(self.data, self.disp, self.length)
 
     @property
-    def i64be (self): 
+    def i64be (self):
         return bin_acc_i64be(self.data, self.disp, self.length)
 
+
+def unpack_from_stream (stream, offset, pack_fmt, pack_len):
+    stream.seek(offset)
+    return struct.unpack(pack_fmt, stream.read(pack_len))[0]
+
+def pack_to_stream (stream, offset, pack_fmt, value):
+    stream.seek(offset)
+    stream.write(struct.pack(pack_fmt, value))
+    return
+
+class io_pack_accessor (object):
+
+    __slots__ = 'stream disp length'.split()
+
+    def __init__ (self, stream, disp = 0, length = None):
+        self.stream = stream
+        self.disp = disp
+        self.length = length
+        return
+
+    def check_range (self, offset, size):
+        return offset >= 0 and (self.length is None or offset + size <= self.length)
+
+    def __getitem__ (self, offset):
+        if not self.check_range(offset, self.PACK_LEN):
+            raise IndexError('out of range')
+        return unpack_from_stream(self.stream, offset,
+                self.PACK_FMT, self.PACK_LEN)
+
+    def __setitem__ (self, offset, value):
+        if not self.check_range(offset, self.PACK_LEN):
+            raise IndexError('out of range')
+        return pack_to_stream(self.stream, offset, self.PACK_FMT, value)
+
+class io_accessor (object):
+
+    __slots__ = 'stream disp length'.split()
+
+    def __init__ (self, stream, disp = 0, length = None):
+        self.stream = stream
+        self.disp = disp
+        self.length = length
+        return
+
+for a in PACK_ACC_LIST:
+    n = 'io_accessor_' + a
+    pa = type(n, (io_pack_accessor,),
+            dict(PACK_FMT=PACK_FMT_DICT[a], PACK_LEN=PACK_LEN_DICT[a]))
+    globals()[n] = pa
+    setattr(io_accessor, a, property(lambda self, pa=pa: pa(self.stream, self.disp, self.length)))
 
