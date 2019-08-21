@@ -10,11 +10,16 @@ def pow2_round_up (n, p):
     assert pow2_check(p)
     return (n + p - 1) & ~(p - 1)
 
-def hex (n):
-    return '{:X}'.format(n)
+def hex (n, prefix='0x', suffix=''):
+    return '{}{:X}{}'.format(prefix, n, suffix)
 
-def hex_items (l, sep = ', '):
-    return sep.join(hex(n) for n in l)
+def log2_ceil (n):
+    p = 0
+    while n > (1 << p): p += 1
+    return p
+
+def hex_items (l, sep = ', ', prefix='', suffix='', item_prefix='0x', item_suffix=''):
+    return ''.join((prefix, sep.join(hex(n, prefix=item_prefix, suffix=item_suffix) for n in l), suffix))
 
 def u8_hex (n):
     return '{:02X}'.format(n)
