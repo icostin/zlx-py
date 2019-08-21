@@ -8,6 +8,24 @@ def bin_test ():
     assert a.i8[1] == -14
     return
 
+def hex_char_dump_test ():
+    import zlx.bin
+
+    d = zlx.bin.hex_char_dump(
+            data = b'xxx\x01a\x02b\x03c\x04d\x05efghijklmnopqrstuvwxyz',
+            data_offset = 3,
+            data_length = 30,
+            display_data_offset = 0x12307,
+            display_row_offset = 0x12302,
+            width = 13)
+    print(d)
+    assert d.strip() == '''
+12302: .. .. .. ..  .. 01 61 02  62 03 63 04  64         .a.b.c.d
+1230F: 05 65 66 67  68 69 6A 6B  6C 6D 6E 6F  70    .efghijklmnop
+1231C: 71 72 73 74  75 76 77 78  79 .. .. ..  ..    qrstuvwxy
+'''.strip()
+    return
+
 def io_test ():
     import zlx.bin
     a = zlx.bin.io_accessor(io.BytesIO())
@@ -70,6 +88,7 @@ if __name__ == '__main__':
             windump_info(sys.argv[2])
     else:
         bin_test()
+        hex_char_dump_test()
         io_test()
         record_test()
         pe_test()

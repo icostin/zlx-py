@@ -194,6 +194,9 @@ def hex_char_dump (
         no_char_pad = ' ',
         ):
 
+    if isinstance(data, (bytes, bytearray)):
+        data = zlx.bin.accessor(data).u8
+
     if data_length is None:
         data_length = len(data) - data_offset
 
