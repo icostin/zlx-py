@@ -29,8 +29,9 @@ Header = zlx.record.make('WinDumpHeader', '''
         pfn_database = zlx.int.hex,
         loaded_module_list = zlx.int.hex,
         active_process_head = zlx.int.hex,
+        machine_image_type = zlx.int.hex,
         bug_check_code = zlx.int.hex,
-        bug_check_params = zlx.int.hex_items,
+        bug_check_params = lambda x: zlx.int.hex_items(x, sep=', ', prefix='(', suffix=')'),
         debugger_data_block = zlx.int.hex,
         ))
 
@@ -41,7 +42,6 @@ def parse_header (data):
     if h.magic == DUMP32_MAGIC:
         h.ver_major = ba.u32le[0x08]
         h.ver_minor = ba.u32le[0x0C]
-        pass
     elif h.magic == DUMP64_MAGIC:
         h.ver_major = ba.u32le[0x08]
         h.ver_minor = ba.u32le[0x0C]
@@ -53,6 +53,6 @@ def parse_header (data):
         h.cpu_count = ba.u32le[0x34]
         h.bug_check_code = ba.u32le[0x38]
         h.bug_check_params = ba.u64le[0x40, 4]
-        h.debugger_data_block = ba.u64le[0x60]
+        h.debugger_data_block = ba.u64le[0x80]
     return h
 
