@@ -65,7 +65,6 @@ class bin_pack_acc (object):
         struct.pack_into(self.__class__.PACK_FMT, self.data, self.disp + offset, value)
         return value
 
-    pass # bin_pack_acc
 
 class accessor (object):
 
@@ -112,22 +111,28 @@ class io_pack_accessor (object):
     def check_range (self, offset, size):
         return offset >= 0 and (self.length is None or offset + size <= self.length)
 
+    def unpack (self, offset):
+        if not self.check_range(offset, self.PACK_LEN):
+            raise IndexError('out of range')
+        return (unpack_from_stream(self.stream, offset,
+                self.PACK_FMT, self.PACK_LEN), self.PACK_LEN)
+
     def __getitem__ (self, index):
         if isinstance(index, tuple):
             offset, count = index
             return tuple(self[offset + i * self.PACK_LEN] for i in range(count))
         else:
             offset = index
+        return self.unpack(offset)[0]
 
-        if not self.check_range(offset, self.PACK_LEN):
-            raise IndexError('out of range')
-        return unpack_from_stream(self.stream, offset,
-                self.PACK_FMT, self.PACK_LEN)
-
-    def __setitem__ (self, offset, value):
+    def pack (self, offset, value):
         if not self.check_range(offset, self.PACK_LEN):
             raise IndexError('out of range')
         return pack_to_stream(self.stream, offset, self.PACK_FMT, value)
+
+    def __setitem__ (self, offset, value):
+        return self.pack(offset, value)
+
 
 class io_accessor (object):
 
@@ -141,6 +146,7 @@ class io_accessor (object):
 
     def check_range (self, offset, size):
         return offset >= 0 and (self.length is None or offset + size <= self.length)
+
     def __getitem__ (self, index):
         if isinstance(index, tuple):
             offset, length = index
@@ -150,6 +156,7 @@ class io_accessor (object):
             return bytes(self.stream.read(length))
         else:
             return self.u8[index]
+
 # class io_accessor
 
 

@@ -44,6 +44,16 @@ def record_test ():
     print(repr(p))
     print(p.validate_x())
 
+    FBZ = zlx.record.make('FBZ', 'foo:u8 bar:u32le baz:u16be', field_repr=dict(a=zlx.int.hex, b=zlx.int.hex, c=zlx.int.hex))
+    f = zlx.bin.io_accessor(io.BytesIO(b'@abcdefghijk'))
+    fbz = FBZ.from_io_accessor(f, 1)[0]
+    print(repr(fbz))
+    assert fbz.foo == 0x61
+    assert fbz.bar == 0x65646362
+    assert fbz.baz == 0x6667
+    return
+
+
 def pe_test ():
     import zlx.bin
     import zlx.pe
