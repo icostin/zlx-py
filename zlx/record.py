@@ -36,8 +36,11 @@ class Record(object):
 # Record
 
 def make (name, fields, validators = None, field_names = None, field_repr = None):
-    has_acc = ':' in fields
-    fields = tuple(fields.split())
+    if isinstance(fields, str):
+        has_acc = ':' in fields
+        fields = tuple(fields.split())
+    else:
+        has_acc = False
     field_acc = {}
     if has_acc:
         new_fields = []

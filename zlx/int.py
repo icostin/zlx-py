@@ -1,3 +1,9 @@
+import sys
+
+if sys.version_info[0] >= 3:
+    INT_TYPES = (int,)
+else:
+    INT_TYPES = (int, long)
 
 def pow2_check (n):
     return n > 0 and (n & (n - 1)) == 0

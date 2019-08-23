@@ -26,6 +26,53 @@ def hex_char_dump_test ():
 '''.strip()
     return
 
+def wire_test ():
+    import zlx.wire
+    assert zlx.wire.u8.decode(io.BytesIO(b'abc')) == 0x61
+    assert zlx.wire.u16le.decode(io.BytesIO(b'abc')) == 0x6261
+    assert zlx.wire.u16be.decode(io.BytesIO(b'abc')) == 0x6162
+
+    try:
+        zlx.wire.u8.decode(io.BytesIO(b''))
+    except zlx.wire.decode_error as e:
+        assert 'truncated data' in e.args
+
+    mm = {b'aragula': 0, b'barabu': 1, b'barz': 2, b'barabul': 3}
+    assert zlx.wire.stream_decode_byte_seq_map(io.BytesIO(b'barabula'), mm) == 3
+
+    assert zlx.wire.stream_decode_byte_seq_map(io.BytesIO(b'xbarabula'), mm, False) is None
+
+    try:
+        zlx.wire.stream_decode_byte_seq_map(io.BytesIO(b'xbarabula'), mm)
+    except zlx.wire.decode_error as e:
+        assert 'no match' in e.args[0]
+
+    mc = zlx.wire.magic_codec(b'MZ', b'\x7FELF', b'PNG')
+    try:
+        mc.decode(io.BytesIO(b'bla'))
+    except zlx.wire.decode_error as e:
+        assert 'no match' in e.args[0]
+
+    f = io.BytesIO(b'MZAP')
+    assert mc.decode(f) == b'MZ'
+    assert f.read() == b'AP'
+
+    field = zlx.wire.stream_record_field
+    ABC = zlx.wire.stream_record_codec('ABC',
+            field('magic', zlx.wire.magic_codec(b'ABC\n')),
+            field('aaa', zlx.wire.u16be),
+            field('bbb', zlx.wire.u32le),
+            field('ccc', zlx.wire.u8))
+    f = io.BytesIO(b'ABC\ndefghijk')
+    o = ABC.decode(f)
+    print('o = {!r}'.format(o))
+    assert o.aaa == 0x6465
+    assert o.bbb == 0x69686766
+    assert o.ccc == 0x6A
+    assert o.magic == b'ABC\n'
+
+    return
+
 def io_test ():
     import zlx.bin
     a = zlx.bin.io_accessor(io.BytesIO())
@@ -89,6 +136,7 @@ def windump_info (input_path):
     print(repr(dh))
     return
 
+
 if __name__ == '__main__':
     print(repr(sys.argv))
     if len(sys.argv) >= 2:
@@ -98,6 +146,7 @@ if __name__ == '__main__':
             windump_info(sys.argv[2])
     else:
         bin_test()
+        wire_test()
         hex_char_dump_test()
         io_test()
         record_test()
