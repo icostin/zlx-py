@@ -22,8 +22,9 @@ PACK_FMT_DICT = {
 }
 
 class stream_codec (object):
-    __slots__ = 'decode encode'.split()
-    def __init__ (self, decode, encode):
+    __slots__ = 'decode encode name'.split()
+    def __init__ (self, name, decode, encode):
+        self.name = name
         self.decode = decode
         self.encode = encode
 
@@ -46,10 +47,17 @@ def stream_decode_copy (stream, size, throw_on_no_match = True):
 def stream_encode_copy (stream, value):
     stream.write(value)
 
-for codec in PACK_FMT_DICT:
-    globals()[codec] = stream_codec(
-            decode = lambda stream, pack_fmt=PACK_FMT_DICT[codec], pack_len=len(struct.pack(PACK_FMT_DICT[codec], 0)): stream_decode_unpack(stream, pack_fmt, pack_len),
-            encode = lambda stream, value, pack_fmt=PACK_FMT_DICT[codec]: stream_encode_pack(stream, value, pack_fmt))
+def stream_decode_array (stream, codec, count):
+    return tuple(codec.decode(stream) for i in range(count))
+
+INT_CODECS = []
+for codec_name in PACK_FMT_DICT:
+    codec = stream_codec(
+            name = codec_name,
+            decode = lambda stream, pack_fmt=PACK_FMT_DICT[codec_name], pack_len=len(struct.pack(PACK_FMT_DICT[codec_name], 0)): stream_decode_unpack(stream, pack_fmt, pack_len),
+            encode = lambda stream, value, pack_fmt=PACK_FMT_DICT[codec_name]: stream_encode_pack(stream, value, pack_fmt))
+    globals()[codec_name] = codec
+    INT_CODECS.append(codec)
 
 def stream_decode_byte_seq_map (stream, byte_seq_map, throw_on_no_match = True):
     max_len = max(len(k) for k in byte_seq_map)
@@ -69,8 +77,9 @@ def stream_decode_byte_seq_map (stream, byte_seq_map, throw_on_no_match = True):
     stream.seek(match_len - max_len, 1)
     return match
 
-def magic_codec (*magic_list):
+def magic_codec (name, *magic_list):
     return stream_codec(
+            name = name,
             decode = lambda stream, _map = magic_list: stream_decode_byte_seq_map(stream, _map),
             encode = stream_encode_copy)
 
@@ -81,6 +90,7 @@ def default_desc (x):
 
 stream_record_field = zlx.record.make('record_field', 'name codec desc')
 
+#* stream_record_codec ******************************************************/
 class stream_record_codec (object):
     __slots__ = 'fields record_type'.split()
     def __init__ (self, name, *fields):
@@ -96,4 +106,48 @@ class stream_record_codec (object):
     def encode (self, stream, value):
         for f in self.fields:
             f.codec.encode(stream, getattr(value, f.name))
+
+
+#* encoded_stream ***********************************************************/
+class encoded_stream (object):
+
+    __slots = 'stream decode encode'.split()
+    def __init__ (self, stream, codec):
+        self.stream = stream
+        self.decode = codec.decode
+        self.encode = codec.encode
+
+    def read (self):
+        return self.decode(stream)
+
+    def write (self, value):
+        self.encode(self.stream, value)
+
+    def __getitem__ (self, index):
+        if isinstance(index, tuple):
+            offset, count = index
+            self.stream.seek(offset)
+            return tuple(self.decode(stream) for i in range(count))
+        else:
+            self.stream.seek(index)
+            return self.decode(self.stream)
+
+    def __setitem__ (self, offset, value):
+        self.stream.seek(offset)
+        self.encode(self.stream, value)
+
+
+#* stream *******************************************************************/
+class stream (object):
+
+    #__slots__ = 'stream codec_streams'.split()
+    def __init__ (self, stream, *codec_list, **codec_map):
+        if isinstance(stream, (bytes, bytearray)):
+            stream = zlx.io.ba_view(stream)
+        self.stream = stream
+        for codec in codec_list:
+            print('add codec {}'.format(codec.name))
+            setattr(self, codec.name, encoded_stream(stream, codec))
+        for name, codec in codec_map.items():
+            setattr(self, name, encoded_stream(stream, codec))
 

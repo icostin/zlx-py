@@ -1,6 +1,6 @@
 .PHONY: all clean test test-py2 test-py3
 
-all: test-py2 test-py3
+all: test-py3 test-py2
 
 clean:
 	-rm -rf zlx/*.pyc zlx/__pycache__ _temp

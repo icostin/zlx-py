@@ -6,6 +6,15 @@ def bin_test ():
     a = zlx.bin.accessor(b'\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9', disp = 1, length = 8)
     assert a.u8[1] == 0xF2
     assert a.i8[1] == -14
+
+    import zlx.bin
+    a = zlx.bin.io_accessor(io.BytesIO())
+    a.u32be[0] = 0x30313233
+    a.u16be[1] = 0x4142
+    print(repr(a.stream.getvalue()))
+    assert a.stream.getvalue() == b'0AB3'
+    assert a.u32le[0] == 0x33424130
+
     return
 
 def hex_char_dump_test ():
@@ -47,7 +56,7 @@ def wire_test ():
     except zlx.wire.decode_error as e:
         assert 'no match' in e.args[0]
 
-    mc = zlx.wire.magic_codec(b'MZ', b'\x7FELF', b'PNG')
+    mc = zlx.wire.magic_codec('file_formats', b'MZ', b'\x7FELF', b'PNG')
     try:
         mc.decode(io.BytesIO(b'bla'))
     except zlx.wire.decode_error as e:
@@ -59,7 +68,7 @@ def wire_test ():
 
     field = zlx.wire.stream_record_field
     ABC = zlx.wire.stream_record_codec('ABC',
-            field('magic', zlx.wire.magic_codec(b'ABC\n')),
+            field('magic', zlx.wire.magic_codec('abc', b'ABC\n')),
             field('aaa', zlx.wire.u16be),
             field('bbb', zlx.wire.u32le),
             field('ccc', zlx.wire.u8))
@@ -71,16 +80,24 @@ def wire_test ():
     assert o.ccc == 0x6A
     assert o.magic == b'ABC\n'
 
+    s = zlx.wire.stream(b'0123456789', *zlx.wire.INT_CODECS)
+    assert s.u8[3] == 0x33
     return
 
 def io_test ():
-    import zlx.bin
-    a = zlx.bin.io_accessor(io.BytesIO())
-    a.u32be[0] = 0x30313233
-    a.u16be[1] = 0x4142
-    print(repr(a.stream.getvalue()))
-    assert a.stream.getvalue() == b'0AB3'
-    assert a.u32le[0] == 0x33424130
+    import zlx.io
+    b1 = io.BytesIO(b'0123456789abcdefghijklmnopqrstuvwxyz')
+    b2 = io.BytesIO(b'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    cs = zlx.io.chunked_stream((zlx.io.chunk(b1, 1, 5), zlx.io.chunk(b2, 5, 5),
+        zlx.io.chunk(b1, 3, 3)))
+    r = cs.read(12)
+    print(repr(r))
+    assert r == b'12345FGHIJ34'
+
+    ba = bytearray(b'012345')
+    bav = zlx.io.ba_view(ba)
+    bav.seek(-3, io.SEEK_END)
+    assert bav.read(5) == b'345'
     return
 
 def record_test ():
@@ -136,6 +153,12 @@ def windump_info (input_path):
     print(repr(dh))
     return
 
+def msf7_info (input_path):
+    import zlx.msf7
+    mr = zlx.msf7.reader(input_path)
+    print(repr(mr.superblock))
+    mr.load_dir()
+    print('dir blocks: {!r}'.format(mr.dir_blocks))
 
 if __name__ == '__main__':
     print(repr(sys.argv))
@@ -144,11 +167,13 @@ if __name__ == '__main__':
             map_pe(sys.argv[2], sys.argv[3])
         elif sys.argv[1] == 'windump-info':
             windump_info(sys.argv[2])
+        elif sys.argv[1] == 'msf7-info':
+            msf7_info(sys.argv[2])
     else:
+        io_test()
+        hex_char_dump_test()
         bin_test()
         wire_test()
-        hex_char_dump_test()
-        io_test()
         record_test()
         pe_test()
 
