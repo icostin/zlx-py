@@ -201,8 +201,8 @@ def hex_char_dump (
         no_char_pad = ' ',
         ):
 
-    if isinstance(data, (bytes, bytearray)):
-        data = zlx.bin.accessor(data).u8
+    #if isinstance(data, (bytes, bytearray)):
+    #    data = zlx.bin.accessor(data).u8
 
     if data_length is None:
         data_length = len(data) - data_offset
@@ -210,7 +210,7 @@ def hex_char_dump (
     if display_data_offset is None:
         display_data_offset = data_offset
     if display_row_offset is None:
-        display_data_offset = display_data_offset - display_data_offset % width
+        display_row_offset = display_data_offset - display_data_offset % width
     if display_row_count is None:
         items_in_first_row = width - (display_data_offset - display_row_offset)
         display_row_count = 1

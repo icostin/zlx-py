@@ -31,10 +31,10 @@ class chunk (object):
 class chunked_stream (io.RawIOBase):
 
     def __init__ (self, io_chunks):
-        self.io_chunks = io_chunks
+        self.io_chunks = tuple(io_chunks)
         self.chunk_pos = []
         pos = 0
-        for c in io_chunks:
+        for c in self.io_chunks:
             self.chunk_pos.append(pos)
             pos += c.size
         self.size = pos
@@ -66,20 +66,20 @@ class chunked_stream (io.RawIOBase):
 
     def readinto (self, b):
         size = len(b)
-        print('readinto pos={} size={}'.format(self.pos, size))
+        #print('readinto pos={} size={}'.format(self.pos, size))
         out_ofs = 0
         while out_ofs < size:
             cx = self.offset_to_chunk_index(self.pos)
             if cx is None: break
             offset_in_chunk = self.pos - self.chunk_pos[cx]
             cplen = min(size - out_ofs, self.io_chunks[cx].size - offset_in_chunk)
-            print('cx={} oic={} seekpos={} cplen={}'.format(cx, self.io_chunks[cx].offset + offset_in_chunk, self.io_chunks[cx].offset + offset_in_chunk, cplen))
+            #print('cx={} oic={} seekpos={} cplen={}'.format(cx, self.io_chunks[cx].offset + offset_in_chunk, self.io_chunks[cx].offset + offset_in_chunk, cplen))
             self.io_chunks[cx].stream.seek(self.io_chunks[cx].offset + offset_in_chunk)
-            print('before data={!r}'.format(b[out_ofs:out_ofs + cplen]))
+            #print('before data={!r}'.format(b[out_ofs:out_ofs + cplen]))
             data = self.io_chunks[cx].stream.read(cplen)
             n = len(data)
             b[out_ofs:out_ofs + n] = data
-            print('n={} data={!r}'.format(n, b[out_ofs:out_ofs + cplen]))
+            #print('n={} data={!r}'.format(n, b[out_ofs:out_ofs + cplen]))
             out_ofs += n
             self.pos += n
             if n != cplen: break
