@@ -1,7 +1,8 @@
 import zlx.record
 import zlx.bin
-import zlx.int
 import zlx.io
+import zlx.wire
+import zlx.int
 
 MZ_MAGIC = 0x5A4D
 PE_MAGIC = 0x4550
@@ -247,13 +248,13 @@ def parse_pe_header (ba, offset):
     return peh
 
 def map_parsed_pe (ba, peh, arch_page_size = 4096):
-    if not isinstance(ba, zlx.bin.accessor): ba = zlx.bin.accessor(ba)
+    if not isinstance(ba, zlx.wire.stream): ba = zlx.wire.stream(ba)
     align = peh.opt_hdr.section_alignment if zlx.int.pow2_check(peh.opt_hdr.section_alignment) else arch_page_size
     falign = peh.opt_hdr.file_alignment if zlx.int.pow2_check(peh.opt_hdr.file_alignment) else 1
     image_align = max(align, arch_page_size)
     image = bytearray(zlx.int.pow2_round_up(peh.opt_hdr.size_of_image, image_align))
     hsize = peh.opt_hdr.size_of_headers
-    image[0:hsize] = ba.data[0:hsize]
+    image[0:hsize] = ba[0, hsize]
     for sec in peh.sec:
         if align >= arch_page_size: 
             rva = zlx.int.pow2_round_down(sec.rva, align)
@@ -262,7 +263,8 @@ def map_parsed_pe (ba, peh, arch_page_size = 4096):
             rva = sec.rva
             fpos = sec.fpos
         size = min(sec.vsize, sec.fsize) if sec.vsize > 0 else sec.fsize
-        image[rva:rva+size] = ba.data[fpos:fpos+size]
+        if size > 0:
+            image[rva:rva+size] = ba[fpos, size]
 
     return image
 

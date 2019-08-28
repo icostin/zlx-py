@@ -106,5 +106,7 @@ class ba_view (io.RawIOBase):
         if cplen <= 0: return None
         b[0:cplen] = self.ba[self.pos : self.pos + cplen]
         return cplen
+    def __len__ (self):
+        return len(self.ba)
 
 

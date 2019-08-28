@@ -21,12 +21,19 @@ PACK_FMT_DICT = {
     'i64be': '>q',
 }
 
+CODEC_REGISTRY = {}
+
+def register_codec (codec):
+    if codec.name not in CODEC_REGISTRY:
+        CODEC_REGISTRY[codec.name] = codec
+
 class stream_codec (object):
     __slots__ = 'decode encode name'.split()
     def __init__ (self, name, decode, encode):
         self.name = name
         self.decode = decode
         self.encode = encode
+        register_codec(self)
 
 def stream_decode_unpack (stream, pack_fmt, pack_len):
     data = stream.read(pack_len)
@@ -92,13 +99,31 @@ stream_record_field = zlx.record.make('record_field', 'name codec desc')
 
 #* stream_record_codec ******************************************************/
 class stream_record_codec (object):
-    __slots__ = 'fields record_type'.split()
-    def __init__ (self, name, *fields):
+    __slots__ = 'name fields record_type'.split()
+    def __init__ (self, name_or_spec, *fields):
+        if '\n' in name_or_spec:
+            name = None
+            for line in name_or_spec.splitlines():
+                line = line.strip()
+                if not line: continue
+                if name is None:
+                    if not line.endswith(':'):
+                        raise RuntimeError('bad record spec - expecting "name:\n"')
+                    name = line[0:-1].strip()
+                else:
+                    fn, fc = line.split(':', 1)
+                    field = stream_record_field(fn, CODEC_REGISTRY[fc], default_desc)
+        else:
+            name = name_or_spec
+
+        self.name = name
+        fields = tuple(fields)
         self.fields = fields
         print(repr(tuple((f.name for f in fields))))
         self.record_type = zlx.record.make(name,
             fields = tuple(f.name for f in fields),
             field_repr = { f.name: f.desc or default_desc for f in fields })
+        register_codec(self)
 
     def decode (self, stream):
         return self.record_type(**{f.name: f.codec.decode(stream) for f in self.fields})
@@ -136,6 +161,12 @@ class encoded_stream (object):
         self.stream.seek(offset)
         self.encode(self.stream, value)
 
+    def __len__ (self):
+        pos = self.stream.seek(0, io.SEEK_CUR)
+        end = self.stream.seek(0, io.SEEK_END)
+        self.stream.seek(pos, io.SEEK_SET)
+        return end
+
 
 #* stream *******************************************************************/
 class stream (object):
@@ -145,9 +176,28 @@ class stream (object):
         if isinstance(stream, (bytes, bytearray)):
             stream = zlx.io.ba_view(stream)
         self.stream = stream
+        if not codec_list and not codec_map:
+            codec_map = CODEC_REGISTRY
         for codec in codec_list:
+            if isinstance(codec, (str,)):
+                codec = CODEC_REGISTRY[codec]
             print('add codec {}'.format(codec.name))
             setattr(self, codec.name, encoded_stream(stream, codec))
         for name, codec in codec_map.items():
             setattr(self, name, encoded_stream(stream, codec))
+
+    def __len__ (self):
+        pos = self.stream.seek(0, io.SEEK_CUR)
+        end = self.stream.seek(0, io.SEEK_END)
+        self.stream.seek(pos, io.SEEK_SET)
+        return end
+
+    def __getitem__ (self, index):
+        if isinstance(index, tuple):
+            offset, count = index
+            self.stream.seek(offset)
+            return self.stream.read(count)
+        else:
+            self.stream.seek(index)
+            return self.stream.read(1)[0]
 
