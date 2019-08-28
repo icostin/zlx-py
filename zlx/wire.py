@@ -23,17 +23,23 @@ PACK_FMT_DICT = {
 
 CODEC_REGISTRY = {}
 
+def default_desc (x):
+    if isinstance(x, zlx.int.INT_TYPES):
+        return '{}(0x{:X})'.format(x, x)
+    return repr(x)
+
 def register_codec (codec):
     if codec.name not in CODEC_REGISTRY:
         CODEC_REGISTRY[codec.name] = codec
 
 class stream_codec (object):
-    __slots__ = 'decode encode name'.split()
-    def __init__ (self, name, decode, encode):
+    __slots__ = 'decode encode name desc'.split()
+    def __init__ (self, name, decode, encode, desc = default_desc, register = True):
         self.name = name
         self.decode = decode
         self.encode = encode
-        register_codec(self)
+        self.desc = desc
+        if register: register_codec(self)
 
 def stream_decode_unpack (stream, pack_fmt, pack_len):
     data = stream.read(pack_len)
@@ -57,12 +63,16 @@ def stream_encode_copy (stream, value):
 def stream_decode_array (stream, codec, count):
     return tuple(codec.decode(stream) for i in range(count))
 
+def dec_hex_int_desc (value):
+    return '{0}(0x{0:X})'.format(value)
+
 INT_CODECS = []
 for codec_name in PACK_FMT_DICT:
     codec = stream_codec(
             name = codec_name,
             decode = lambda stream, pack_fmt=PACK_FMT_DICT[codec_name], pack_len=len(struct.pack(PACK_FMT_DICT[codec_name], 0)): stream_decode_unpack(stream, pack_fmt, pack_len),
-            encode = lambda stream, value, pack_fmt=PACK_FMT_DICT[codec_name]: stream_encode_pack(stream, value, pack_fmt))
+            encode = lambda stream, value, pack_fmt=PACK_FMT_DICT[codec_name]: stream_encode_pack(stream, value, pack_fmt),
+            desc = dec_hex_int_desc)
     globals()[codec_name] = codec
     INT_CODECS.append(codec)
 
@@ -85,25 +95,28 @@ def stream_decode_byte_seq_map (stream, byte_seq_map, throw_on_no_match = True):
     return match
 
 def magic_codec (name, *magic_list):
+    if name.startswith('!'):
+        name = name[1:]
+        register = False
+    else:
+        register = True
     return stream_codec(
             name = name,
             decode = lambda stream, _map = magic_list: stream_decode_byte_seq_map(stream, _map),
-            encode = stream_encode_copy)
-
-def default_desc (x):
-    if isinstance(x, zlx.int.INT_TYPES):
-        return '{}(0x{:X})'.format(x, x)
-    return repr(x)
+            encode = stream_encode_copy,
+            register = register)
 
 stream_record_field = zlx.record.make('record_field', 'name codec desc')
 
 #* stream_record_codec ******************************************************/
 class stream_record_codec (object):
     __slots__ = 'name fields record_type'.split()
-    def __init__ (self, name_or_spec, *fields):
+    def __init__ (self, name_or_spec, *fields, **kw):
         if '\n' in name_or_spec:
             name = None
+            fl = []
             for line in name_or_spec.splitlines():
+                if '#' in line: line = line[0:line.index('#')]
                 line = line.strip()
                 if not line: continue
                 if name is None:
@@ -111,8 +124,15 @@ class stream_record_codec (object):
                         raise RuntimeError('bad record spec - expecting "name:\n"')
                     name = line[0:-1].strip()
                 else:
-                    fn, fc = line.split(':', 1)
-                    field = stream_record_field(fn, CODEC_REGISTRY[fc], default_desc)
+                    if ':' in line:
+                        fn, fc = (x.strip() for x in line.split(':', 1))
+                    else:
+                        fc, fn = line.split()
+                    codec = kw[fc] if fc in kw else CODEC_REGISTRY[fc]
+                    field = stream_record_field(fn, codec, codec.desc)
+                    fl.append(field)
+            fl.extend(fields)
+            fields = fl
         else:
             name = name_or_spec
 
@@ -181,7 +201,6 @@ class stream (object):
         for codec in codec_list:
             if isinstance(codec, (str,)):
                 codec = CODEC_REGISTRY[codec]
-            print('add codec {}'.format(codec.name))
             setattr(self, codec.name, encoded_stream(stream, codec))
         for name, codec in codec_map.items():
             setattr(self, name, encoded_stream(stream, codec))

@@ -51,11 +51,17 @@ def wire_test ():
     assert f.read() == b'AP'
 
     field = zlx.wire.stream_record_field
-    ABC = zlx.wire.stream_record_codec('ABC',
-            field('magic', zlx.wire.magic_codec('abc', b'ABC\n')),
-            field('aaa', zlx.wire.u16be),
-            field('bbb', zlx.wire.u32le),
-            field('ccc', zlx.wire.u8))
+    ABC = zlx.wire.stream_record_codec(
+            '''
+            ABC: # my ABC record
+                magic: abc_magic # this is magic
+                aaa: u16be
+                u32le bbb
+            ''',
+            # field('magic', zlx.wire.magic_codec('abc', b'ABC\n', register = False)),
+            # field('aaa', zlx.wire.u16be),
+            # field('bbb', zlx.wire.u32le),
+            field('ccc', zlx.wire.u8), abc_magic=zlx.wire.magic_codec('abc', b'ABC\n'))
     f = io.BytesIO(b'ABC\ndefghijk')
     o = ABC.decode(f)
     print('o = {!r}'.format(o))
