@@ -143,7 +143,7 @@ class stream_record_codec (object):
         self.name = name
         fields = tuple(fields)
         self.fields = fields
-        print(repr(tuple((f.name for f in fields))))
+        #print(repr(tuple((f.name for f in fields))))
         self.record_type = zlx.record.make(name,
             fields = tuple(f.name for f in fields),
             field_repr = { f.name: f.desc or default_desc for f in fields })
