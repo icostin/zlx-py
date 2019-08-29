@@ -151,6 +151,9 @@ def msf7_info (input_path):
     print(repr(mr.superblock))
     mr.load_dir()
     print('dir blocks: {!r}'.format(mr.dir_blocks))
+    print('stream count: {}'.format(mr.stream_count))
+    print('stream sizes: {!r}'.format(mr.stream_size_table))
+    print('stream #1:\n{}'.format(zlx.bin.hex_char_dump(mr.streams[1])))
 
 if __name__ == '__main__':
     print(repr(sys.argv))

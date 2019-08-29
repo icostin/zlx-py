@@ -2,6 +2,10 @@ import struct
 import zlx.int
 import zlx.record
 
+SEEK_SET = 0
+SEEK_CUR = 1
+SEEK_END = 2
+
 class decode_error (RuntimeError): pass
 
 PACK_FMT_DICT = {
@@ -162,8 +166,10 @@ class encoded_stream (object):
         self.decode = codec.decode
         self.encode = codec.encode
 
-    def read (self):
-        return self.decode(stream)
+    def read (self, count = None):
+        if count is not None:
+            return [self.decode(self.stream) for i in range(count)]
+        return self.decode(self.stream)
 
     def write (self, value):
         self.encode(self.stream, value)
@@ -182,9 +188,9 @@ class encoded_stream (object):
         self.encode(self.stream, value)
 
     def __len__ (self):
-        pos = self.stream.seek(0, io.SEEK_CUR)
-        end = self.stream.seek(0, io.SEEK_END)
-        self.stream.seek(pos, io.SEEK_SET)
+        pos = self.stream.seek(0, SEEK_CUR)
+        end = self.stream.seek(0, SEEK_END)
+        self.stream.seek(pos, SEEK_SET)
         return end
 
 
@@ -201,14 +207,18 @@ class stream (object):
         for codec in codec_list:
             if isinstance(codec, (str,)):
                 codec = CODEC_REGISTRY[codec]
-            setattr(self, codec.name, encoded_stream(stream, codec))
+            self.add_codec(codec)
         for name, codec in codec_map.items():
-            setattr(self, name, encoded_stream(stream, codec))
+            self.add_codec(codec, name)
+
+    def add_codec (self, codec, name = None):
+        if name is None: name = codec.name
+        setattr(self, name, encoded_stream(self.stream, codec))
 
     def __len__ (self):
-        pos = self.stream.seek(0, io.SEEK_CUR)
-        end = self.stream.seek(0, io.SEEK_END)
-        self.stream.seek(pos, io.SEEK_SET)
+        pos = self.stream.seek(0, SEEK_CUR)
+        end = self.stream.seek(0, SEEK_END)
+        self.stream.seek(pos, SEEK_SET)
         return end
 
     def __getitem__ (self, index):
@@ -219,4 +229,13 @@ class stream (object):
         else:
             self.stream.seek(index)
             return self.stream.read(1)[0]
+
+    def seekable (self):
+        return self.stream.seekable()
+
+    def seek (self, offset, whence = SEEK_SET):
+        return self.stream.seek(offset, whence)
+
+    def read (self, size = -1):
+        return self.stream.read(size)
 

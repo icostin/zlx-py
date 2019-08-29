@@ -51,6 +51,7 @@ class chunked_stream (io.RawIOBase):
         else: raise ValueError('unsupported whence {}'.format(whence))
         if offset < 0: raise ValueError('negative offset')
         self.pos = offset
+        return offset
 
     def offset_to_chunk_index (self, offset):
         a, b = 0, len(self.io_chunks) - 1
@@ -101,6 +102,7 @@ class ba_view (io.RawIOBase):
         else: raise ValueError('unsupported whence {}'.format(whence))
         if offset < 0: raise ValueError('negative offset')
         self.pos = offset
+        return offset
     def readinto (self, b):
         cplen = min(len(b), len(self.ba) - self.pos)
         if cplen <= 0: return None
