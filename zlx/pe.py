@@ -269,7 +269,7 @@ def map_parsed_pe (ba, peh, arch_page_size = 4096):
     return image
 
 def map_pe_from_path (path, arch_page_size = 4096):
-    ba = zlx.bin.accessor(zlx.io.bin_load(path))
+    ba = zlx.wire.stream(zlx.io.bin_load(path))
     mzh = parse_mz_header(ba)
     peh = parse_pe_header(ba, offset = mzh.e_lfanew)
     return map_parsed_pe(ba, peh, arch_page_size)
