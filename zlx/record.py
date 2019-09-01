@@ -37,21 +37,7 @@ class Record(object):
 
 def make (name, fields, validators = None, field_names = None, field_repr = None):
     if isinstance(fields, str):
-        has_acc = ':' in fields
         fields = tuple(fields.split())
-    else:
-        has_acc = False
-    field_acc = {}
-    if has_acc:
-        new_fields = []
-        for f in fields:
-            if ':' in f:
-                nf, fa = f.split(':', 1)
-                new_fields.append(nf)
-                field_acc[nf] = fa
-            else:
-                new_fields.append(f)
-        fields = new_fields
     if validators is None: validators = {}
     if field_names is None: field_names = {}
     if field_repr is None: field_repr = {}
@@ -61,8 +47,7 @@ def make (name, fields, validators = None, field_names = None, field_repr = None
         __slots__ = fields,
         _field_to_name = f2n,
         _name_to_field = n2f,
-        _field_repr = field_repr,
-        _field_acc = field_acc))
+        _field_repr = field_repr))
     for f in fields:
         v = validators[f] if f in validators else lambda self: True
         setattr(t, 'validate_{}'.format(f), lambda self: v(getattr(self, f)))
