@@ -1,11 +1,11 @@
-.PHONY: all clean test test-py2 test-py3
+.PHONY: all clean test test-py2 test-py3 dist
 
 PREFIX_DIR=$(HOME)/.local
 
 all: test-py3 test-py2
 
 clean:
-	-rm -rf zlx/*.pyc zlx/__pycache__ _temp
+	-rm -rf zlx/*.pyc zlx/__pycache__ _temp build dist zlx.egg-info
 
 test:
 	PYTHONPATH=. python test/test.py
@@ -37,3 +37,6 @@ install:
 
 uninstall:
 	rm -rf $(PREFIX_DIR)/bin/zlx $(PREFIX_DIR)/lib/zlx-py
+
+dist: clean
+	PYTHONPATH=. python3 setup.py sdist bdist_wheel
