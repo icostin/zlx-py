@@ -155,6 +155,16 @@ def msf7_info (input_path):
     print('stream sizes: {!r}'.format(mr.stream_size_table))
     print('stream #1:\n{}'.format(zlx.bin.hex_char_dump(mr.streams[1])))
 
+def xref_test ():
+    import zlx.bin
+    import zlx.wire
+    x = zlx.bin.xref_scan(b'\xE8\x0B\0\0\0\xB8\x10\x10\0\0------X\xFA\xFF\xFF\xFF!',
+            target = 0x1010,
+            encoder = lambda v: zlx.wire.u32le.encode_to_bytes(v & 0xFFFFFFFF),
+            base = 0x1000, rel_delta_range = range(4, 6))
+    print('{!r}'.format(x))
+
+
 if __name__ == '__main__':
     print(repr(sys.argv))
     if len(sys.argv) >= 2:
@@ -165,9 +175,14 @@ if __name__ == '__main__':
         elif sys.argv[1] == 'msf7-info':
             msf7_info(sys.argv[2])
     else:
-        io_test()
-        record_test()
-        wire_test()
-        hex_char_dump_test()
-        pe_test()
+        var = None
+        for var in sorted(filter(lambda n: n.endswith('_test'), globals())):
+            print('calling test {!r}'.format(var))
+            globals()[var]()
+
+        #io_test()
+        #record_test()
+        #wire_test()
+        #hex_char_dump_test()
+        #pe_test()
 

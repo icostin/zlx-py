@@ -94,3 +94,29 @@ def hex_char_dump (
 
     return o.getvalue()
 
+xref_collection = zlx.record.make('xrefs', 'absolute relative')
+
+def xref_scan (data, target, encoder, base = 0, 
+        start_offset = 0, end_offset = None,
+        abs_ref = True, rel_delta_range = range(0, 1)):
+    if end_offset is None: end_offset = len(data)
+    xrefs = xref_collection([], {})
+    if abs_ref:
+        encoded_target = encoder(target)
+        offset = start_offset
+        while True:
+            offset = data.find(encoded_target, offset, end_offset)
+            if offset < 0: break
+            xrefs.absolute.append(offset)
+            offset += 1
+    if rel_delta_range:
+        for offset in range(start_offset, end_offset):
+            for delta in rel_delta_range:
+                encoded_target = encoder(target - base - delta - offset)
+                print('checking for {!r} at offset {!r} where {!r} is'.format(encoded_target, offset, data[offset : offset + len(encoded_target)]))
+                if data[offset : offset + len(encoded_target)] == encoded_target:
+                    if delta not in xrefs.relative:
+                        xrefs.relative[delta] = []
+                    xrefs.relative[delta].append(offset)
+    return xrefs
+

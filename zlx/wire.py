@@ -1,6 +1,10 @@
+from __future__ import absolute_import
 import struct
+import io
+
 import zlx.int
 import zlx.record
+import zlx.io
 
 SEEK_SET = 0
 SEEK_CUR = 1
@@ -36,14 +40,27 @@ def register_codec (codec):
     if codec.name not in CODEC_REGISTRY:
         CODEC_REGISTRY[codec.name] = codec
 
+
 class stream_codec (object):
+
     __slots__ = 'decode encode name desc'.split()
+
     def __init__ (self, name, decode, encode, desc = default_desc, register = True):
         self.name = name
         self.decode = decode
         self.encode = encode
         self.desc = desc
         if register: register_codec(self)
+
+    def encode_to_bytes (self, value):
+        f = io.BytesIO()
+        self.encode(f, value)
+        return f.getvalue()
+
+    def decode_from_bytes (self, data):
+        f = encoded_stream(data, self)
+        return f.read()
+
 
 def stream_decode_unpack (stream, pack_fmt, pack_len):
     data = stream.read(pack_len)
