@@ -164,6 +164,11 @@ def xref_test ():
             base = 0x1000, rel_delta_range = range(4, 6))
     print('{!r}'.format(x))
 
+def inc_build_no_test ():
+    from zlx.build_number import inc as increment_build_number
+    x = increment_build_number('ala\nbala\nBUILD =           	123; # gr\nxx;')
+    print(repr(x))
+    assert x == 'ala\nbala\nBUILD =           	124; # gr\nxx;\n'
 
 if __name__ == '__main__':
     print(repr(sys.argv))

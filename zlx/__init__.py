@@ -2,7 +2,11 @@ import sys
 
 VER_MAJOR = 0
 VER_MINOR = 0
-BUILD = 2
+BUILD = 3
+
+VER = (VER_MAJOR, VER_MINOR, BUILD)
+
+VER_STR = '{}.{}.{}'.format(*VER)
 
 def sfmt (fmt, *a, **b):
     return fmt.format(*a, **b)

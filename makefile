@@ -29,14 +29,23 @@ _temp/hello64.exe: test/hello.c | _temp
 _temp:
 	mkdir -p $@
 
-install:
+dev-install:
+	pip3 install -e .
+
+install-manual:
 	install zlx.sh $(PREFIX_DIR)/bin/zlx
 	mkdir -p $(PREFIX_DIR)/lib/zlx-py/zlx
 	cp -f zlx.py $(PREFIX_DIR)/lib/zlx-py
 	cp -rf zlx/*.py $(PREFIX_DIR)/lib/zlx-py/zlx
 
-uninstall:
+uninstall-manual:
 	rm -rf $(PREFIX_DIR)/bin/zlx $(PREFIX_DIR)/lib/zlx-py
 
-dist: clean
-	PYTHONPATH=. python3 setup.py sdist bdist_wheel
+inc-build:
+	zlx inc-build zlx/__init__.py
+
+dist:
+	python3 setup.py sdist bdist_wheel
+
+upload:
+	twine upload dist/*

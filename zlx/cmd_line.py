@@ -45,9 +45,15 @@ def cmd_msf7_info (req):
             emsg('error processing file {!r}', input_path)
             raise
 
+def cmd_inc_build (req):
+    from zlx.build_number import inc
+    for path in req.FILE:
+        inc(path = path, save_path = path, pattern = req.prefix)
+
 def main (args):
     ap = argparse.ArgumentParser(
             description='tool to process binary and text data')
+    ap.add_argument('-V', '--version', action='version', version='zlx {}'.format(zlx.VER_STR))
     ap.add_argument('-v', '--verbose', help='be verbose',
             action='store_true', default=False)
 
@@ -60,8 +66,13 @@ def main (args):
 
     p = sp.add_parser('map-pe', help='creates an image of the mapped PE file')
     p.add_argument('FILE', nargs='*', help='input file(s)')
-    p.add_argument('-o OUTSPEC', dest='out_spec', default='{path}.img')
-    p.add_argument('-p PAGESIZE', dest='page_size', type=int, default=4096)
+    p.add_argument('-o', '--out', dest='out_spec', default='{path}.img')
+    p.add_argument('-p', '--page-size', dest='page_size', type=int, default=4096)
+
+    p = sp.add_parser('inc-build',
+            help = 'increments build number in a given file')
+    p.add_argument('-p', '--prefix', dest = 'prefix', help='prefix string for the build number', default = 'BUILD =')
+    p.add_argument('FILE', nargs='*', help='file(s)')
 
     req = ap.parse_args(args[1:])
     if req.verbose:
