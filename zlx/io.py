@@ -266,7 +266,7 @@ class stream_cache (object):
             dmsg('ofs=0x{:X} len=0x{:X}. got block: {}', offset, len(data), b.desc())
             if b.kind == SCK_INCOMING:
                 self.blocks.insert(bx, cached_data_block(offset, bytearray(data)))
-                self._merge_left(self, bx)
+                self._merge_left(bx)
                 b.offset += len(data)
                 return
             elif b.kind == SCK_PAST_END:
@@ -303,6 +303,42 @@ class stream_cache (object):
 
         pass
 
+    def _split_block (self, bx, offset):
+        '''
+        splits a block that has size (cached, uncached, hole) and returns the index and
+        the block that starts with the given offset.
+        '''
+        blk = self.blocks[bx]
+        assert blk.kind in (SCK_CACHED, SCK_UNCACHED, SCK_HOLE)
+        assert blk.offset <= offset
+        assert blk.offset + blk.get_size() > offset
+        if blk.offset == offset: return bx, blk
+        if blk.kind == SCK_CACHED:
+            nblk = cached_data_block(offset, data = bytearray(blk.data[offset - blk.offset:]))
+            blk.data[offset - blk.offset:] = b''
+        else:
+            nblk = blk.__class__(offset = offset, size = blk.offset + blk.size - offset)
+        self.blocks.insert(bx + 1, nblk)
+        return bx + 1, nblk
+
+    def _discard_contiguous_data_blocks (self, bx):
+        '''
+        deletes all blocks from given index as long as they refer to data 
+        (cached/uncached) and updates the next non-data block (fix offset/size).
+        '''
+        offset = self.blocks[bx].offset
+        while self.blocks[bx].kind in (SCK_CACHED, SCK_UNCACHED):
+            del self.blocks[bx]
+        assert self.blocks[bx].kind in (SCK_HOLE, SCK_INCOMING, SCK_PAST_END)
+        if self.blocks[bx].kind == SCK_HOLE:
+            self.blocks[bx].size += offset - self.blocks[bx].offset
+        self.blocks[bx].offset = offset
+        self._merge_left(bx)
+
     def _update_no_data (self, offset):
+        bx, blk = self.locate_block(offset)
+        if blk.kind in (SCK_CACHED, SCK_UNCACHED):
+            bx, blk = self._split_block(bx, offset)
+            self._discard_contiguous_data_blocks(self, bx)
         pass
 
