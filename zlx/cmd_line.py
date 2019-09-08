@@ -4,8 +4,10 @@ import traceback
 import zlx.record
 import zlx.io
 
+sfmt = zlx.io.sfmt
 omsg = zlx.io.omsg
 emsg = zlx.io.emsg
+dmsg = zlx.io.dmsg
 
 def cmd_help (req):
     req.ap.print_help()
@@ -50,6 +52,29 @@ def cmd_inc_build (req):
     for path in req.FILE:
         inc(path = path, save_path = path, pattern = req.prefix)
 
+def cmd_test_stream_cache (req):
+    with open(req.FILE, 'rb') as f:
+        sc = zlx.io.stream_cache(f,
+                align = req.alignment,
+                assume_size = req.assume_size)
+        for c in req.commands:
+            dmsg('*** {!r}', sc)
+            verb, *args = c.split(':')
+            if verb == 'get':
+                ofs, size = (int(x) for x in args)
+                dmsg('--- get(offset={}, size={})', ofs, size)
+                blk = sc.get_part(ofs, size)
+                dmsg('==> block: {!r}', blk)
+            if verb == 'load':
+                ofs, size = (int(x) for x in args)
+                dmsg('--- load(offset={}, size={})', ofs, size)
+                sc._load(ofs, size)
+            else:
+                raise RuntimeError(sfmt('unsupported verb {!r}', verb))
+        dmsg('*** {!r}', sc)
+
+    pass
+
 def main (args):
     ap = argparse.ArgumentParser(
             description='tool to process binary and text data')
@@ -74,11 +99,29 @@ def main (args):
     p.add_argument('-p', '--prefix', dest = 'prefix', help='prefix string for the build number', default = 'BUILD =')
     p.add_argument('FILE', nargs='*', help='file(s)')
 
+    p = sp.add_parser('test-stream-cache',
+            help = 'test drives zlx.io.stream_cache')
+    p.add_argument('FILE',
+            help = 'input file')
+    p.add_argument('-a', '--alignment',
+            type = int,
+            help = 'alignment for load commands',
+            default = 4096)
+    p.add_argument('-z', '--assume-size',
+            type = int,
+            help='init caching to assume the given size',
+            default = None)
+    p.add_argument('commands',
+            nargs = '*',
+            help = '"get:<offset>:<size>" or "load:<offset>:<size>"')
+
     req = ap.parse_args(args[1:])
     if req.verbose:
         print('command line: {!r}'.format(req))
 
     if req.cmd is None: req.cmd = 'help'
+    dmsg('parsed command line: {}', req)
+
     req.ap = ap
 
     globals()['cmd_' + req.cmd.replace('-', '_')](req)

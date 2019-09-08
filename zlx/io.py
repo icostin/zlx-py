@@ -1,6 +1,21 @@
 from __future__ import absolute_import
 import sys
 import io
+import os
+import zlx.int
+import zlx.record
+
+SEEK_SET = 0
+SEEK_CUR = 1
+SEEK_END = 2
+
+def sfmt (fmt, *l, **kw): return fmt.format(*l, **kw)
+
+if os.environ.get('DEBUG', ''):
+    def dmsg (fmt, *l, **kw):
+        sys.stdout.write((fmt + '\n').format(*l, **kw))
+else:
+    def dmsg (fmt, *l, **kw): pass
 
 def omsg (fmt, *l, **kw):
     return sys.stdout.write((fmt + '\n').format(*l, **kw))
@@ -47,10 +62,10 @@ class chunked_stream (io.RawIOBase):
     def seekable (self):
         return True
 
-    def seek (self, offset, whence=io.SEEK_SET):
-        if whence == io.SEEK_SET: pass
-        elif whence == io.SEEK_CUR: offset += self.pos
-        elif whence == io.SEEK_END: offset += self.size
+    def seek (self, offset, whence=SEEK_SET):
+        if whence == SEEK_SET: pass
+        elif whence == SEEK_CUR: offset += self.pos
+        elif whence == SEEK_END: offset += self.size
         else: raise ValueError('unsupported whence {}'.format(whence))
         if offset < 0: raise ValueError('negative offset')
         self.pos = offset
@@ -98,10 +113,10 @@ class ba_view (io.RawIOBase):
         self.ba = ba
         self.pos = 0
     def seekable (self): return True
-    def seek (self, offset, whence = io.SEEK_SET):
-        if whence == io.SEEK_SET: pass
-        elif whence == io.SEEK_CUR: offset += self.pos
-        elif whence == io.SEEK_END: offset += len(self.ba)
+    def seek (self, offset, whence = SEEK_SET):
+        if whence == SEEK_SET: pass
+        elif whence == SEEK_CUR: offset += self.pos
+        elif whence == SEEK_END: offset += len(self.ba)
         else: raise ValueError('unsupported whence {}'.format(whence))
         if offset < 0: raise ValueError('negative offset')
         self.pos = offset
@@ -114,4 +129,180 @@ class ba_view (io.RawIOBase):
     def __len__ (self):
         return len(self.ba)
 
+#/* stream_cache *************************************************************/
+SCK_UNCACHED = 0
+SCK_CACHED = 1
+SCK_HOLE = 2
+SCK_INCOMING = 3
+SCK_PAST_END = 4
+
+uncached_data_block = zlx.record.make('uncached_data_block', 'offset size')
+uncached_data_block.get_size = lambda x: x.size
+uncached_data_block.kind = SCK_UNCACHED
+uncached_data_block.desc = lambda x: sfmt('UC(0x{:X},0x{:X})', x.offset, x.size)
+
+cached_data_block = zlx.record.make('cached_data_block', 'offset data')
+cached_data_block.get_size = lambda x: len(x.data)
+cached_data_block.kind = SCK_CACHED
+cached_data_block.desc = lambda x: sfmt('C(0x{:X},0x{:X},{!r})', x.offset, len(x.data), x.data[0:4])
+
+hole_block = zlx.record.make('hole_block', 'offset size')
+hole_block.get_size = lambda x: x.size
+hole_block.kind = SCK_HOLE
+hole_block.desc = lambda x: sfmt('H(0x{:X},0x{:X})', x.offset, x.size)
+
+incoming_block = zlx.record.make('incoming_block', 'offset')
+incoming_block.get_size = lambda x: 0
+incoming_block.kind = SCK_INCOMING
+incoming_block.desc = lambda x: sfmt('IN(0x{:X})', x.offset)
+
+past_end_block = zlx.record.make('past_end_block', 'offset')
+past_end_block.get_size = lambda x: 0
+past_end_block.kind = SCK_PAST_END
+past_end_block.desc = lambda x: sfmt('E(0x{:X})', x.offset)
+
+
+class stream_cache (object):
+
+    def __init__ (self, stream, align = 4096, assume_size = None):
+
+        self.stream = stream
+
+        self.seekable = False
+        self.blocks = []
+
+        if assume_size is not None:
+            self.seekable = stream.seekable()
+            end = assume_size
+        elif stream.seekable():
+            try:
+                self.pos = stream.seek(0, SEEK_CUR)
+                end = stream.seek(0, SEEK_END)
+                stream.seek(self.pos, SEEK_CUR)
+                self.seekable = True
+            except:
+                pass
+        if self.seekable:
+            self.blocks.append(uncached_data_block(0, end))
+            self.blocks.append(past_end_block(end))
+            assert zlx.int.pow2_check(align), "alignment must be a power of 2"
+            self.align = align # alignment for offsets / sizes when doing I/O
+        else:
+            self.blocks.append(incoming_block(0))
+            self.align = 1
+
+    def __repr__ (self):
+        return sfmt('stream_cache(stream={!r}, seekable={!r}, blocks={!r})', self.stream, self.seekable, [x.desc() for x in self.blocks])
+
+    def locate_block (self, offset):
+        for i in range(len(self.blocks)):
+            b = self.blocks[i]
+            if offset >= b.offset and offset - b.offset < b.get_size():
+                return i, b
+        return len(self.blocks) - 1, self.blocks[-1]
+
+    def get_part (self, offset, size):
+        '''
+        returns information from cache about data starting with given offset.
+        The information returned may describe a smaller portion than the requested size
+        but never more. The caller must call again to get information about the
+        remaining data
+        '''
+        bx, b = self.locate_block(offset)
+        if b.kind == SCK_UNCACHED:
+            assert b.offset <= offset and offset - b.offset < b.size
+            return uncached_data_block(offset, min(size, b.offset + b.size - offset))
+        elif b.kind == SCK_CACHED:
+            b_size = b.get_size()
+            assert b.offset <= offset and offset - b.offset < b_size
+            n = min(size, b.offset + b_size - offset)
+            o = offset - b.offset
+            return cached_data_block(offset, b.data[o : o + n])
+        elif b.kind == SCK_HOLE:
+            assert b.offset <= offset and offset - b.offset < b.size
+            return uncached_data_block(offset, min(size, b.offset + b.size - offset))
+        else:
+            return b
+
+    def _seek (self, offset):
+        if self.seekable:
+            assert offset >= 0, 'cannot seek to negative offsets'
+            self.stream.seek(offset, SEEK_SET)
+        else:
+            if offset != self.pos:
+                raise RuntimeError("unseekable cannot change pos from {} to {}".format(self.pos, offset))
+
+    def _load (self, offset, size):
+        o = zlx.int.pow2_round_down(offset, self.align)
+        e = zlx.int.pow2_round_up(offset + size, self.align)
+        dmsg('load o={:X} e={:X}', o, e)
+        self._seek(o)
+        while o < e:
+            data = self.stream.read(e - o)
+            if not data:
+                self._update_no_data(o)
+                break
+            self._update_data(o, data)
+            o += len(data)
+
+    def _merge_left (self, bx):
+        if bx == 0 or bx >= len(self.blocks): return
+        l = self.blocks[bx - 1]
+        r = self.blocks[bx]
+        if l.kind != r.kind: return
+        assert l.offset + l.get_size() == r.offset, 'non-contiguous blocks'
+        if l.kind == SCK_CACHED:
+            l.data[len(l.data):] = r.data
+            del self.blocks[bx]
+
+    def _merge_around (self, bx, count = 1):
+        self._merge_left(bx)
+        self._merge_left(bx + count)
+
+    def _update_data (self, offset, data):
+        dmsg('updating o=0x{:X} len=0x{:X}', offset, len(data))
+        while data:
+            bx, b = self.locate_block(offset)
+            dmsg('ofs=0x{:X} len=0x{:X}. got block: {}', offset, len(data), b.desc())
+            if b.kind == SCK_INCOMING:
+                self.blocks.insert(bx, cached_data_block(offset, bytearray(data)))
+                self._merge_left(self, bx)
+                b.offset += len(data)
+                return
+            elif b.kind == SCK_PAST_END:
+                if offset > b.offset:
+                    self.blocks.insert(bx, uncached_data_block(b.offset, offset - b.offset) )
+                    bx += 1
+                self.blocks.insert(bx, cached_data_block(offset, bytearray(data)))
+                b.offset = offset + len(data)
+                return
+            elif b.kind == SCK_UNCACHED:
+                new_blocks = []
+                b_end = b.offset + b.size
+                if b.offset < offset:
+                    new_blocks.append(uncached_data_block(b.offset, offset - b.offset))
+                nb_len = min(b_end - offset, len(data))
+                new_blocks.append(cached_data_block(offset, bytearray(data[0: nb_len])))
+                data_end = offset + len(data)
+                if data_end < b_end:
+                    new_blocks.append(uncached_data_block(data_end, b_end - data_end))
+                self.blocks[bx : bx + 1] = new_blocks
+                self._merge_around(bx, len(new_blocks))
+                offset += nb_len
+                data = data[nb_len:]
+            elif b.kind == SCK_CACHED:
+                b_end = b.offset + len(b.data)
+                update_len = min(b_end - offset, len(data))
+                b.data[offset - b.offset : offset - b.offset + update_len] = data[0 : update_len]
+                offset += update_len
+                data = data[update_len:]
+            elif b.kind == SCK_HOLE:
+                raise "todo"
+            else:
+                raise sfmt("huh? {!r}", b)
+
+        pass
+
+    def _update_no_data (self, offset):
+        pass
 
