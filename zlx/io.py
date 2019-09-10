@@ -8,6 +8,8 @@ import zlx.record
 SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
+SEEK_DATA = os.SEEK_DATA
+SEEK_HOLE = os.SEEK_HOLE
 
 def sfmt (fmt, *l, **kw): return fmt.format(*l, **kw)
 
@@ -133,34 +135,21 @@ class ba_view (io.RawIOBase):
 SCK_UNCACHED = 0
 SCK_CACHED = 1
 SCK_HOLE = 2
-SCK_INCOMING = 3
-SCK_PAST_END = 4
 
 uncached_data_block = zlx.record.make('uncached_data_block', 'offset size')
 uncached_data_block.get_size = lambda x: x.size
 uncached_data_block.kind = SCK_UNCACHED
-uncached_data_block.desc = lambda x: sfmt('UC(0x{:X},0x{:X})', x.offset, x.size)
+uncached_data_block.desc = lambda x: sfmt('uncached(0x{:X},0x{:X})', x.offset, x.size)
 
 cached_data_block = zlx.record.make('cached_data_block', 'offset data')
 cached_data_block.get_size = lambda x: len(x.data)
 cached_data_block.kind = SCK_CACHED
-cached_data_block.desc = lambda x: sfmt('C(0x{:X},0x{:X},{!r})', x.offset, len(x.data), x.data[0:4])
+cached_data_block.desc = lambda x: sfmt('cached(0x{:X},0x{:X},{!r})', x.offset, len(x.data), bytes(x.data[0:4]))
 
 hole_block = zlx.record.make('hole_block', 'offset size')
 hole_block.get_size = lambda x: x.size
 hole_block.kind = SCK_HOLE
-hole_block.desc = lambda x: sfmt('H(0x{:X},0x{:X})', x.offset, x.size)
-
-incoming_block = zlx.record.make('incoming_block', 'offset')
-incoming_block.get_size = lambda x: 0
-incoming_block.kind = SCK_INCOMING
-incoming_block.desc = lambda x: sfmt('IN(0x{:X})', x.offset)
-
-past_end_block = zlx.record.make('past_end_block', 'offset')
-past_end_block.get_size = lambda x: 0
-past_end_block.kind = SCK_PAST_END
-past_end_block.desc = lambda x: sfmt('E(0x{:X})', x.offset)
-
+hole_block.desc = lambda x: sfmt('hole(0x{:X},0x{:X})', x.offset, x.size) if x.size else sfmt('end(0x{:X})', x.offset)
 
 class stream_cache (object):
 
@@ -184,15 +173,15 @@ class stream_cache (object):
                 pass
         if self.seekable:
             self.blocks.append(uncached_data_block(0, end))
-            self.blocks.append(past_end_block(end))
+            self.blocks.append(hole_block(end, 0))
             assert zlx.int.pow2_check(align), "alignment must be a power of 2"
             self.align = align # alignment for offsets / sizes when doing I/O
         else:
-            self.blocks.append(incoming_block(0))
+            self.blocks.append(hole_block(0, 0))
             self.align = 1
 
     def __repr__ (self):
-        return sfmt('stream_cache(stream={!r}, seekable={!r}, blocks={!r})', self.stream, self.seekable, [x.desc() for x in self.blocks])
+        return sfmt('stream_cache(stream={!r}, seekable={!r}, blocks=[{}])', self.stream, self.seekable, ', '.join([x.desc() for x in self.blocks]))
 
     def locate_block (self, offset):
         for i in range(len(self.blocks)):
@@ -223,6 +212,18 @@ class stream_cache (object):
             return uncached_data_block(offset, min(size, b.offset + b.size - offset))
         else:
             return b
+
+    def get (self, offset, size):
+        '''
+        returns a list of blocks that describe the given range as returned
+        byte get_part
+        '''
+        a = []
+        while size:
+            blk = self.get_part(offset, size)
+            a.append(blk)
+            size -= blk.get_size() or size
+        return a
 
     def _seek (self, offset):
         if self.seekable:
@@ -264,16 +265,12 @@ class stream_cache (object):
         while data:
             bx, b = self.locate_block(offset)
             dmsg('ofs=0x{:X} len=0x{:X}. got block: {}', offset, len(data), b.desc())
-            if b.kind == SCK_INCOMING:
-                self.blocks.insert(bx, cached_data_block(offset, bytearray(data)))
-                self._merge_left(bx)
-                b.offset += len(data)
-                return
-            elif b.kind == SCK_PAST_END:
+            if b.kind == SCK_HOLE:
                 if offset > b.offset:
                     self.blocks.insert(bx, uncached_data_block(b.offset, offset - b.offset) )
                     bx += 1
                 self.blocks.insert(bx, cached_data_block(offset, bytearray(data)))
+                self._merge_left(bx)
                 b.offset = offset + len(data)
                 return
             elif b.kind == SCK_UNCACHED:
@@ -296,8 +293,6 @@ class stream_cache (object):
                 b.data[offset - b.offset : offset - b.offset + update_len] = data[0 : update_len]
                 offset += update_len
                 data = data[update_len:]
-            elif b.kind == SCK_HOLE:
-                raise "todo"
             else:
                 raise sfmt("huh? {!r}", b)
 
@@ -329,7 +324,7 @@ class stream_cache (object):
         offset = self.blocks[bx].offset
         while self.blocks[bx].kind in (SCK_CACHED, SCK_UNCACHED):
             del self.blocks[bx]
-        assert self.blocks[bx].kind in (SCK_HOLE, SCK_INCOMING, SCK_PAST_END)
+        assert self.blocks[bx].kind in (SCK_HOLE, )
         if self.blocks[bx].kind == SCK_HOLE:
             self.blocks[bx].size += offset - self.blocks[bx].offset
         self.blocks[bx].offset = offset

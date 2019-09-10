@@ -63,9 +63,9 @@ def cmd_test_stream_cache (req):
             if verb == 'get':
                 ofs, size = (int(x) for x in args)
                 dmsg('--- get(offset={}, size={})', ofs, size)
-                blk = sc.get_part(ofs, size)
-                dmsg('==> block: {!r}', blk)
-            if verb == 'load':
+                blk_list = sc.get(ofs, size)
+                dmsg('==> block: {!r}', blk_list)
+            elif verb == 'load':
                 ofs, size = (int(x) for x in args)
                 dmsg('--- load(offset={}, size={})', ofs, size)
                 sc._load(ofs, size)
