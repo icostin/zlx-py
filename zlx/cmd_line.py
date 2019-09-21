@@ -68,7 +68,7 @@ def cmd_test_stream_cache (req):
             elif verb == 'load':
                 ofs, size = (int(x) for x in args)
                 dmsg('--- load(offset={}, size={})', ofs, size)
-                sc._load(ofs, size)
+                sc.load(ofs, size)
             else:
                 raise RuntimeError(sfmt('unsupported verb {!r}', verb))
         dmsg('*** {!r}', sc)

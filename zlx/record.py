@@ -1,5 +1,5 @@
 
-class Record(object):
+class Record (object):
 
     def __init__ (self, *a, **b):
         for i in range(len(a)):

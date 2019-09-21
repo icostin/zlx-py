@@ -8,8 +8,12 @@ import zlx.record
 SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
-SEEK_DATA = os.SEEK_DATA
-SEEK_HOLE = os.SEEK_HOLE
+if sys.version_info[0] >= 3:
+    SEEK_DATA = os.SEEK_DATA
+    SEEK_HOLE = os.SEEK_HOLE
+else:
+    SEEK_DATA = 3
+    SEEK_HOLE = 4
 
 def sfmt (fmt, *l, **kw): return fmt.format(*l, **kw)
 
@@ -151,10 +155,31 @@ hole_block.get_size = lambda x: x.size
 hole_block.kind = SCK_HOLE
 hole_block.desc = lambda x: sfmt('hole(0x{:X},0x{:X})', x.offset, x.size) if x.size else sfmt('end(0x{:X})', x.offset)
 
-class stream_cache (object):
+#/* stream_cache_base ********************************************************/
+class stream_cache_base (object):
+
+    def __init__ (self):
+        object.__init__(self)
+
+    def get (self, offset, size):
+        '''
+        returns a list of blocks that describe the given range as returned
+        by get_part()
+        '''
+        a = []
+        while size:
+            blk = self.get_part(offset, size)
+            a.append(blk)
+            offset += blk.get_size()
+            size -= blk.get_size() or size
+        return a
+
+#/* stream_cache *************************************************************/
+class stream_cache (stream_cache_base):
 
     def __init__ (self, stream, align = 4096, assume_size = None):
 
+        stream_cache_base.__init__(self)
         self.stream = stream
 
         self.seekable = False
@@ -172,7 +197,8 @@ class stream_cache (object):
             except:
                 pass
         if self.seekable:
-            self.blocks.append(uncached_data_block(0, end))
+            if end > 0:
+                self.blocks.append(uncached_data_block(0, end))
             self.blocks.append(hole_block(end, 0))
             assert zlx.int.pow2_check(align), "alignment must be a power of 2"
             self.align = align # alignment for offsets / sizes when doing I/O
@@ -197,6 +223,8 @@ class stream_cache (object):
         but never more. The caller must call again to get information about the
         remaining data
         '''
+        if offset < 0:
+            return hole_block(offset, min(size, -offset))
         bx, b = self.locate_block(offset)
         if b.kind == SCK_UNCACHED:
             assert b.offset <= offset and offset - b.offset < b.size
@@ -208,22 +236,14 @@ class stream_cache (object):
             o = offset - b.offset
             return cached_data_block(offset, b.data[o : o + n])
         elif b.kind == SCK_HOLE:
-            assert b.offset <= offset and offset - b.offset < b.size
-            return uncached_data_block(offset, min(size, b.offset + b.size - offset))
+            assert b.offset <= offset
+            assert b.size == 0 or offset - b.offset < b.size, repr((self, b, offset))
+            if b.size == 0:
+                return hole_block(offset, 0)
+            else:
+                return hole_block(offset, min(size, b.offset + b.size - offset))
         else:
             return b
-
-    def get (self, offset, size):
-        '''
-        returns a list of blocks that describe the given range as returned
-        byte get_part
-        '''
-        a = []
-        while size:
-            blk = self.get_part(offset, size)
-            a.append(blk)
-            size -= blk.get_size() or size
-        return a
 
     def _seek (self, offset):
         if self.seekable:
@@ -233,7 +253,7 @@ class stream_cache (object):
             if offset != self.pos:
                 raise RuntimeError("unseekable cannot change pos from {} to {}".format(self.pos, offset))
 
-    def _load (self, offset, size):
+    def load (self, offset, size):
         o = zlx.int.pow2_round_down(offset, self.align)
         e = zlx.int.pow2_round_up(offset + size, self.align)
         dmsg('load o={:X} e={:X}', o, e)
@@ -336,4 +356,31 @@ class stream_cache (object):
             bx, blk = self._split_block(bx, offset)
             self._discard_contiguous_data_blocks(self, bx)
         pass
+
+#/* stream_cache_server ******************************************************/
+class stream_cache_server (object):
+
+    def __init__ (self):
+        object.__init__(self)
+
+    def wrap (self, stream):
+        '''
+        Returns a proxy stream that responds to get() by sending to a worked thread
+        the request to load the missing parts from the cache and returns immediately
+        the current cache
+        '''
+
+#/* stream_cache_proxy *******************************************************/
+class stream_cache_proxy (stream_cache):
+
+    def __init__ (self, source, server):
+        object.__init__(self)
+        self.source = source
+        self.server = server
+
+    def get_part (self, offset, size):
+        b = self.source.get_part(offset, size)
+        pass
+
+
 
