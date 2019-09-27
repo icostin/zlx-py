@@ -2,24 +2,27 @@ from __future__ import absolute_import
 import sys
 import io
 import os
+import threading
+import time
+from collections import namedtuple
+
 import zlx.int
 import zlx.record
 
 SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
-if sys.version_info[0] >= 3:
-    SEEK_DATA = os.SEEK_DATA
-    SEEK_HOLE = os.SEEK_HOLE
-else:
-    SEEK_DATA = 3
-    SEEK_HOLE = 4
+SEEK_DATA = 3
+SEEK_HOLE = 4
 
 def sfmt (fmt, *l, **kw): return fmt.format(*l, **kw)
 
-if os.environ.get('DEBUG', ''):
+dlog_path = os.environ.get('DEBUG', '')
+if dlog_path:
+    dlog = open(dlog_path, 'w') if dlog_path != '-' else sys.stderr
     def dmsg (fmt, *l, **kw):
-        sys.stdout.write((fmt + '\n').format(*l, **kw))
+        dlog.write((fmt + '\n').format(*l, **kw))
+        dlog.flush()
 else:
     def dmsg (fmt, *l, **kw): pass
 
@@ -338,7 +341,7 @@ class stream_cache (stream_cache_base):
 
     def _discard_contiguous_data_blocks (self, bx):
         '''
-        deletes all blocks from given index as long as they refer to data 
+        deletes all blocks from given index as long as they refer to data
         (cached/uncached) and updates the next non-data block (fix offset/size).
         '''
         offset = self.blocks[bx].offset
@@ -357,30 +360,126 @@ class stream_cache (stream_cache_base):
             self._discard_contiguous_data_blocks(self, bx)
         pass
 
+stream_cache_load_request = namedtuple('stream_cache_load_request', 'offset size'.split())
+
 #/* stream_cache_server ******************************************************/
 class stream_cache_server (object):
 
-    def __init__ (self):
+    def __init__ (self, init_worker_count = 4, max_worker_count = 16):
         object.__init__(self)
+        self.free_worker_count = 0
+        self.max_worker_count = max_worker_count
+        self.stream_queue = []
+        self.lock = threading.Lock()
+        self.cond = threading.Condition(self.lock)
+        self.up = True
+        dmsg('stream_cache_server initing {} workers...', init_worker_count)
+        self.workers = [threading.Thread(target = self.worker) for i in range(init_worker_count)]
+        for worker in self.workers:
+            worker.start()
 
-    def wrap (self, stream):
+    def add_worker_ (self):
+        th = threading.Thread(target = self.worker)
+        self.workers.append(th)
+        th.start()
+
+    def wrap (self, stream, delay = 0):
         '''
         Returns a proxy stream that responds to get() by sending to a worked thread
         the request to load the missing parts from the cache and returns immediately
         the current cache
         '''
+        if not isinstance(stream, stream_cache):
+            stream = stream_cache(stream)
+        return stream_cache_proxy(stream, self, delay = delay)
+
+    def queue_stream_ (self, scp):
+        '''
+        adds to the queue a stream_cache_proxy
+        '''
+        with self.lock:
+            if scp.queued:
+                dmsg('stream already queued')
+                return
+            dmsg('stream queued')
+            self.stream_queue.append(scp)
+            if self.free_worker_count == 0 and len(self.workers) < self.max_worker_count:
+                self.add_worker_()
+            scp.queued = True
+            self.cond.notify()
+
+    def worker (self):
+        dmsg('worker')
+        while True:
+            scp = None
+            with self.lock:
+                self.free_worker_count += 1
+                while not self.stream_queue and self.up:
+                    self.cond.wait()
+                if not self.up:
+                    dmsg('exiting worker...')
+                    return
+                scp = self.stream_queue.pop(0)
+                scp.queued = False
+                self.free_worker_count -= 1
+            if scp:
+                scp.work_()
+
+    def shutdown (self):
+        with self.lock:
+            self.up = False
+            self.cond.notify_all()
+        for worker in self.workers:
+            worker.join()
 
 #/* stream_cache_proxy *******************************************************/
 class stream_cache_proxy (stream_cache):
 
-    def __init__ (self, source, server):
+    def __init__ (self, source, server, delay = 0):
         object.__init__(self)
         self.source = source
         self.server = server
+        self.queued = False
+        self.lock = threading.Lock()
+        self.load_queue = []
+        self.delay = delay
+        self.updated = False
 
     def get_part (self, offset, size):
         b = self.source.get_part(offset, size)
-        pass
+        if b.kind == SCK_UNCACHED: self.queue_load_(offset, b.get_size())
+        return b
 
+    def queue_load_ (self, offset, size):
+        if size == 0: return
+        o = zlx.int.pow2_round_down(offset, self.source.align)
+        e = zlx.int.pow2_round_up(offset + size, self.source.align)
+        with self.lock:
+            self.updated = False
+            req = stream_cache_load_request(o, e - o)
+            if req in self.load_queue:
+                dmsg('load request: {!r} already queued', req)
+            else:
+                dmsg('append load request: {!r}', req)
+                self.load_queue.append(req)
+                self.server.queue_stream_(self)
 
+    def reset_updated (self):
+        with self.lock:
+            u = self.updated
+            self.updated = False
+        return u
+
+    def work_ (self):
+        dmsg('start work')
+        if self.delay: time.sleep(self.delay)
+        while True:
+            size = 0
+            with self.lock:
+                if not self.load_queue or not self.server.up: return
+                offset, size = self.load_queue.pop(0)
+            if size:
+                dmsg('loading o={:X} s={:X}', offset, size)
+                self.source.load(offset, size)
+                self.updated = True
 
