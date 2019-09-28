@@ -219,6 +219,9 @@ class stream_cache (stream_cache_base):
                 return i, b
         return len(self.blocks) - 1, self.blocks[-1]
 
+    def get_known_end_offset (self):
+        return self.blocks[len(self.blocks) - 1].offset
+
     def get_part (self, offset, size):
         '''
         returns information from cache about data starting with given offset.
@@ -449,6 +452,9 @@ class stream_cache_proxy (stream_cache):
         b = self.source.get_part(offset, size)
         if b.kind == SCK_UNCACHED: self.queue_load_(offset, b.get_size())
         return b
+
+    def get_known_end_offset (self):
+        return self.source.get_known_end_offset()
 
     def queue_load_ (self, offset, size):
         if size == 0: return
