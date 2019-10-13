@@ -277,9 +277,14 @@ class stream_cache (stream_cache_base):
         l = self.blocks[bx - 1]
         r = self.blocks[bx]
         if l.kind != r.kind: return
-        assert l.offset + l.get_size() == r.offset, 'non-contiguous blocks'
-        if l.kind == SCK_CACHED:
-            l.data[len(l.data):] = r.data
+        if l.offset + l.get_size() == r.offset:
+            if l.kind == SCK_CACHED:
+                l.data[len(l.data):] = r.data
+            elif l.kind == SCK_UNCACHED:
+                l.size += r.size
+            elif l.kind == SCK_HOLE:
+                l.size += r.size
+                if r.size == 0: l.size = 0 # hole before eof becomes eof
             del self.blocks[bx]
 
     def _merge_around (self, bx, count = 1):

@@ -2,7 +2,7 @@ import sys
 
 VER_MAJOR = 0
 VER_MINOR = 0
-BUILD = 9
+BUILD = 10
 
 VER = (VER_MAJOR, VER_MINOR, BUILD)
 
