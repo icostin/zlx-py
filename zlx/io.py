@@ -4,6 +4,7 @@ import io
 import os
 import threading
 import time
+import traceback
 from collections import namedtuple
 
 import zlx.int
@@ -21,7 +22,10 @@ dlog_path = os.environ.get('DEBUG', '')
 if dlog_path:
     dlog = open(dlog_path, 'w') if dlog_path != '-' else sys.stderr
     def dmsg (fmt, *l, **kw):
-        dlog.write((fmt + '\n').format(*l, **kw))
+        ff = traceback.extract_stack()
+        src, line, fn, etc = ff[len(ff) - 2]
+
+        dlog.write(('{}:{}: in {}():' + fmt + '\n').format(src, line, fn, *l, **kw))
         dlog.flush()
 else:
     def dmsg (fmt, *l, **kw): pass
