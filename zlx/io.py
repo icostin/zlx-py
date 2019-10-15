@@ -147,20 +147,33 @@ SCK_UNCACHED = 0
 SCK_CACHED = 1
 SCK_HOLE = 2
 
-uncached_data_block = zlx.record.make('uncached_data_block', 'offset size')
-uncached_data_block.get_size = lambda x: x.size
-uncached_data_block.kind = SCK_UNCACHED
-uncached_data_block.desc = lambda x: sfmt('uncached(0x{:X},0x{:X})', x.offset, x.size)
+class uncached_data_block (zlx.record.Record):
+    __slots__ = 'offset size'.split()
+    kind = SCK_UNCACHED
+    _field_repr = {}
+    def get_size (self): return self.size
+    def desc (x): return sfmt('uncached(0x{:X},0x{:X})', x.offset, x.size)
+    def __repr__ (self): return self.desc()
 
-cached_data_block = zlx.record.make('cached_data_block', 'offset data')
-cached_data_block.get_size = lambda x: len(x.data)
-cached_data_block.kind = SCK_CACHED
-cached_data_block.desc = lambda x: sfmt('cached(0x{:X},0x{:X},{!r})', x.offset, len(x.data), bytes(x.data[0:4]))
+class cached_data_block (zlx.record.Record):
+    __slots__ = 'offset data'.split()
+    kind = SCK_CACHED
+    _field_repr = {}
+    def get_size (self): return len(self.data)
+    def desc (x): return sfmt('cached(0x{:X},0x{:X},{!r})', x.offset, len(x.data), bytes(x.data[0:4]))
+    def __repr__ (self): return self.desc()
 
-hole_block = zlx.record.make('hole_block', 'offset size')
-hole_block.get_size = lambda x: x.size
-hole_block.kind = SCK_HOLE
-hole_block.desc = lambda x: sfmt('hole(0x{:X},0x{:X})', x.offset, x.size) if x.size else sfmt('end(0x{:X})', x.offset)
+class hole_block (zlx.record.Record):
+    __slots__ = 'offset size'.split()
+    kind = SCK_HOLE
+    _field_repr = {}
+    def get_size (self): return self.size
+    def desc (x):
+        if x.size:
+            return sfmt('hole(0x{:X},0x{:X})', x.offset, x.size)
+        else:
+            return sfmt('end(0x{:X})', x.offset)
+    def __repr__ (self): return self.desc()
 
 #/* stream_cache_base ********************************************************/
 class stream_cache_base (object):
@@ -214,7 +227,7 @@ class stream_cache (stream_cache_base):
             self.align = 1
 
     def __repr__ (self):
-        return sfmt('stream_cache(stream={!r}, seekable={!r}, blocks=[{}])', self.stream, self.seekable, ', '.join([x.desc() for x in self.blocks]))
+        return sfmt('stream_cache(stream={!r}, seekable={!r}, blocks=[\n    {}])', self.stream, self.seekable, '\n    '.join([x.desc() for x in self.blocks]))
 
     def locate_block (self, offset):
         for i in range(len(self.blocks)):
@@ -233,9 +246,12 @@ class stream_cache (stream_cache_base):
         but never more. The caller must call again to get information about the
         remaining data
         '''
+        if size < 0:
+            raise ValueError('negative size: {}'.format(size))
         if offset < 0:
             return hole_block(offset, min(size, -offset))
         bx, b = self.locate_block(offset)
+        dmsg('offset 0x{:X} -> bx={} b={!r}', offset, bx, b)
         if b.kind == SCK_UNCACHED:
             assert b.offset <= offset and offset - b.offset < b.size
             return uncached_data_block(offset, min(size, b.offset + b.size - offset))
@@ -263,18 +279,22 @@ class stream_cache (stream_cache_base):
             if offset != self.pos:
                 raise RuntimeError("unseekable cannot change pos from {} to {}".format(self.pos, offset))
 
-    def load (self, offset, size):
-        o = zlx.int.pow2_round_down(offset, self.align)
-        e = zlx.int.pow2_round_up(offset + size, self.align)
-        dmsg('load o={:X} e={:X}', o, e)
+    def _load (self, o, e):
         self._seek(o)
         while o < e:
             data = self.stream.read(e - o)
+            dmsg('got 0x{} bytes', len(data) if data else 0)
             if not data:
                 self._update_no_data(o)
                 break
             self._update_data(o, data)
             o += len(data)
+
+    def load (self, offset, size):
+        o = zlx.int.pow2_round_down(offset, self.align)
+        e = zlx.int.pow2_round_up(offset + size, self.align)
+        self._load(o, e)
+        dmsg('load o={:X} e={:X} => {!r}', o, e, self)
 
     def _merge_left (self, bx):
         if bx == 0 or bx >= len(self.blocks): return
@@ -331,8 +351,6 @@ class stream_cache (stream_cache_base):
             else:
                 raise sfmt("huh? {!r}", b)
 
-        pass
-
     def _split_block (self, bx, offset):
         '''
         splits a block that has size (cached, uncached, hole) and returns the index and
@@ -367,9 +385,10 @@ class stream_cache (stream_cache_base):
 
     def _update_no_data (self, offset):
         bx, blk = self.locate_block(offset)
+        dmsg('no data at 0x{:X} => got block {!r}', offset, blk)
         if blk.kind in (SCK_CACHED, SCK_UNCACHED):
             bx, blk = self._split_block(bx, offset)
-            self._discard_contiguous_data_blocks(self, bx)
+            self._discard_contiguous_data_blocks(bx)
         pass
 
 stream_cache_load_request = namedtuple('stream_cache_load_request', 'offset size'.split())
@@ -432,10 +451,13 @@ class stream_cache_server (object):
                     dmsg('exiting worker...')
                     return
                 scp = self.stream_queue.pop(0)
-                scp.queued = False
                 self.free_worker_count -= 1
-            if scp:
+            while scp:
                 scp.work_()
+                with self.lock:
+                    if not scp.load_queue:
+                        scp.queued = False
+                        scp = None
 
     def shutdown (self):
         with self.lock:
