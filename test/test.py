@@ -95,10 +95,9 @@ def io_test ():
 def record_test ():
     import zlx.record
     import zlx.int
-    P = zlx.record.make('Point', 'x y', validators=dict(int=zlx.int.u8_in_range))
+    P = zlx.record.make('Point', 'x y')
     p = P(1, 2)
     print(repr(p))
-    print(p.validate_x())
 
     # FBZ = zlx.record.make('FBZ', 'foo:u8 bar:u32le baz:u16be', field_repr=dict(a=zlx.int.hex, b=zlx.int.hex, c=zlx.int.hex))
     # f = zlx.bin.io_accessor(io.BytesIO(b'@abcdefghijk'))

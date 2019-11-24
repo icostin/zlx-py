@@ -35,10 +35,9 @@ class Record (object):
 
 # Record
 
-def make (name, fields, validators = None, field_names = None, field_repr = None):
+def make (name, fields, field_names = None, field_repr = None):
     if isinstance(fields, str):
         fields = tuple(fields.split())
-    if validators is None: validators = {}
     if field_names is None: field_names = {}
     if field_repr is None: field_repr = {}
     f2n = { f: field_names[f] if f in field_names else f for f in fields }
@@ -48,8 +47,5 @@ def make (name, fields, validators = None, field_names = None, field_repr = None
         _field_to_name = f2n,
         _name_to_field = n2f,
         _field_repr = field_repr))
-    for f in fields:
-        v = validators[f] if f in validators else lambda self: True
-        setattr(t, 'validate_{}'.format(f), lambda self: v(getattr(self, f)))
     return t
 
