@@ -59,7 +59,9 @@ def cmd_test_stream_cache (req):
                 assume_size = req.assume_size)
         for c in req.commands:
             dmsg('*** {!r}', sc)
-            verb, *args = c.split(':')
+            cparts = c.split(':')
+            verb = cparts[0]
+            args = cparts[1:]
             if verb == 'get':
                 ofs, size = (int(x) for x in args)
                 dmsg('--- get(offset={}, size={})', ofs, size)
@@ -73,7 +75,12 @@ def cmd_test_stream_cache (req):
                 raise RuntimeError(sfmt('unsupported verb {!r}', verb))
         dmsg('*** {!r}', sc)
 
-    pass
+def cmd_test_mth (req):
+    import zlx.mth
+    zlx.mth.self_test()
+    if req.verbose:
+        omsg('zlx.mth test passed!')
+
 
 def main (args):
     ap = argparse.ArgumentParser(
@@ -114,6 +121,9 @@ def main (args):
     p.add_argument('commands',
             nargs = '*',
             help = '"get:<offset>:<size>" or "load:<offset>:<size>"')
+
+    p = sp.add_parser('test-mth',
+            help = 'tests zlx.mth module')
 
     req = ap.parse_args(args[1:])
     if req.verbose:
