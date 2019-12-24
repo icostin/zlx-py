@@ -1,40 +1,20 @@
 from __future__ import absolute_import
 import sys
 import io
-import os
 import threading
 import time
-import traceback
 from collections import namedtuple
 
 import zlx.int
 import zlx.record
+
+from zlx.utils import sfmt, dmsg, omsg, emsg
 
 SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
 SEEK_DATA = 3
 SEEK_HOLE = 4
-
-def sfmt (fmt, *l, **kw): return fmt.format(*l, **kw)
-
-dlog_path = os.environ.get('DEBUG', '')
-if dlog_path:
-    dlog = open(dlog_path, 'w') if dlog_path != '-' else sys.stderr
-    def dmsg (fmt, *l, **kw):
-        ff = traceback.extract_stack()
-        src, line, fn, etc = ff[len(ff) - 2]
-
-        dlog.write(('{}:{}: in {}():' + fmt + '\n').format(src, line, fn, *l, **kw))
-        dlog.flush()
-else:
-    def dmsg (fmt, *l, **kw): pass
-
-def omsg (fmt, *l, **kw):
-    return sys.stdout.write((fmt + '\n').format(*l, **kw))
-
-def emsg (fmt, *l, **kw):
-    return sys.stderr.write((fmt + '\n').format(*l, **kw))
 
 def bin_load (path):
     with open(path, 'rb') as f:

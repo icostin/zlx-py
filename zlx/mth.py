@@ -1,7 +1,7 @@
 # multithreading helper
 import threading
 from collections import namedtuple
-from zlx.io import dmsg
+from zlx.utils import dmsg
 
 QUEUED = 0
 RUNNING = 1
