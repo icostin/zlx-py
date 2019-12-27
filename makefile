@@ -11,12 +11,12 @@ test:
 	PYTHONPATH=. python test/test.py
 
 test-py2: _temp/hello32.exe _temp/hello64.exe | _temp
-	PYTHONPATH=. python2 test/test.py
-	PYTHONPATH=. python2 test/test.py map-pe _temp/hello32.exe _temp/hello32.py2.bin
-	PYTHONPATH=. python2 test/test.py map-pe _temp/hello64.exe _temp/hello64.py2.bin
+	PYTHONPATH=. python2 zlx.py test
+	PYTHONPATH=. python2 zlx.py map-pe _temp/hello32.exe -o _temp/hello32.py2.bin
+	PYTHONPATH=. python2 zlx.py map-pe _temp/hello64.exe -o _temp/hello64.py2.bin
 
 test-py3: _temp/hello32.exe _temp/hello64.exe | _temp
-	PYTHONPATH=. python3 test/test.py
+	PYTHONPATH=. python3 zlx.py test
 	PYTHONPATH=. python3 zlx.py map-pe _temp/hello32.exe -o _temp/hello32.py3.bin
 	PYTHONPATH=. python3 zlx.py map-pe _temp/hello64.exe -o _temp/hello64.py3.bin
 
