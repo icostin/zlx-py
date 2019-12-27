@@ -155,31 +155,12 @@ class hole_block (zlx.record.Record):
             return sfmt('end(0x{:X})', x.offset)
     def __repr__ (self): return self.desc()
 
-#/* stream_cache_base ********************************************************/
-class stream_cache_base (object):
-
-    def __init__ (self):
-        object.__init__(self)
-
-    def get (self, offset, size):
-        '''
-        returns a list of blocks that describe the given range as returned
-        by get_part()
-        '''
-        a = []
-        while size:
-            blk = self.get_part(offset, size)
-            a.append(blk)
-            offset += blk.get_size()
-            size -= blk.get_size() or size
-        return a
-
 #/* stream_cache *************************************************************/
-class stream_cache (stream_cache_base):
+class stream_cache (object):
 
     def __init__ (self, stream, align = 4096, assume_size = None):
 
-        stream_cache_base.__init__(self)
+        object.__init__(self)
         self.stream = stream
 
         self.seekable = False
@@ -208,6 +189,19 @@ class stream_cache (stream_cache_base):
 
     def __repr__ (self):
         return sfmt('stream_cache(stream={!r}, seekable={!r}, blocks=[\n    {}])', self.stream, self.seekable, '\n    '.join([x.desc() for x in self.blocks]))
+
+    def get (self, offset, size):
+        '''
+        returns a list of blocks that describe the given range as returned
+        by get_part()
+        '''
+        a = []
+        while size:
+            blk = self.get_part(offset, size)
+            a.append(blk)
+            offset += blk.get_size()
+            size -= blk.get_size() or size
+        return a
 
     def locate_block (self, offset):
         for i in range(len(self.blocks)):
