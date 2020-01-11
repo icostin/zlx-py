@@ -113,7 +113,7 @@ def xref_scan (data, target, encoder, base = 0,
         for offset in range(start_offset, end_offset):
             for delta in rel_delta_range:
                 encoded_target = encoder(target - base - delta - offset)
-                print('checking for {!r} at offset {!r} where {!r} is'.format(encoded_target, offset, data[offset : offset + len(encoded_target)]))
+                #print('checking for {!r} at offset {!r} where {!r} is'.format(encoded_target, offset, data[offset : offset + len(encoded_target)]))
                 if data[offset : offset + len(encoded_target)] == encoded_target:
                     if delta not in xrefs.relative:
                         xrefs.relative[delta] = []

@@ -174,6 +174,10 @@ def io_test ():
     assert bav.read(5) == b'345'
     return
 
+def linear_data_cache_test ():
+    import zlx.io
+    zlx.io.linear_data_cache_test()
+
 def record_test ():
     import zlx.record
     import zlx.int

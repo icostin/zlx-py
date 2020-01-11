@@ -494,3 +494,152 @@ class stream_cache_proxy (stream_cache):
                 self.source.load(offset, size)
                 self.updated = True
 
+################################################################################
+################################################################################
+################################################################################
+
+class cached_block:
+    '''
+    Base class for various cached blocks.
+    '''
+    data_block = False
+    hole_block = False
+    end_block = False
+    def __init__ (self, time, offset):
+        self.time = time
+        self.offset = offset
+    def contains_offset (self, offset):
+        return offset >= self.offset and offset - self.offset < self.size
+
+class cached_data_block (cached_block):
+    '''
+    Cached data block
+    '''
+    __slots__ = 'time offset data'.split()
+    data_block = True
+    def __init__ (self, time, offset, data):
+        cached_block.__init__(self, time, offset)
+        self.data_ = data
+    @property
+    def size (self):
+        return len(self.data)
+    def data_snippet (self):
+        if len(self.data_) > 12:
+            return '{!r}...{!r}'.format(self.data_[0:8], self.data_[-4:])
+        else: return '{!r}'.format(self.data_)
+    def __repr__ (self):
+        return '{}(offset=0x{:X}, size=0x{:X}, time={}, data={})'.format(
+                self.__class__.__name__,
+                self.offset, len(self.data), self.time, self.data_snippet())
+
+
+class cached_hole_block (cached_block):
+    __slots__ = 'time offset size'.split()
+    hole_block = True
+    def __init__ (self, time, offset, size):
+        cached_block.__init__(self, time, offset)
+        self.size_ = size
+    def __repr__ (self):
+        return '{}(offset=0x{:X}, size={}, time={})'.format(
+                self.__class__.__name__,
+                self.offset, self.size)
+
+class uncached_block (cached_hole_block):
+    pass
+
+class cached_end_block (cached_block):
+    __slots__ = 'time offset'.split()
+    hole_block = True
+    end_block = True
+    def __init__ (self, time, offset):
+        cached_block.__init__(self, time, offset)
+    @property
+    def size (self):
+        return 0
+    def __repr__ (self):
+        return '{}(offset=0x{:X}, time={})'.format(
+                self.__class__.__name__,
+                self.offset, self.size, self.time)
+
+HISTORY_BEGIN_TIME = -sys.float_info.max
+
+#* linear_data_cache ********************************************************/
+class linear_data_cache:
+    '''
+    Caches data organized in a linear address space.
+    Can be used for cache of files / data streams, memory layouts, etc.
+    '''
+    def __init__ (self, time_source):
+        self.time_source_ = time_source
+        self.blocks_ = [cached_end_block(HISTORY_BEGIN_TIME, 0)]
+
+    @property
+    def end_block (self):
+        return self.blocks_[-1]
+
+    def add_data (self, data, offset, time = None):
+        if time is None: time = self.time_source_()
+
+    def __repr__ (self):
+        return 'linear-data-cache{{ {} blocks:{}}}'.format(len(self.blocks_), '\n'.join(('\n  * {!r}'.format(b) for b in self.blocks_)))
+
+    def locate_block (self, offset):
+        '''
+        Retrieves the block that contains the given offset or the end block
+        '''
+        for b in self.blocks_:
+            if b.contains_offset(offset): return b
+        return self.last_block
+
+try:
+    time.monotonic()
+    cached_stream_time_source = time.monotonic
+except:
+    cached_stream_time_source = time.time
+
+def _ldc_test_time_source (time_seed):
+    time_seed[0] += 1
+    return time_seed[0]
+
+def linear_data_cache_test ():
+    tsrc = lambda ts = [0]: _ldc_test_time_source(ts)
+    assert tsrc() == 1
+    assert tsrc() == 2
+    ldc = linear_data_cache(tsrc)
+    omsg('initial ldc: {!r}', ldc)
+    assert ldc.end_block.offset == 0
+    omsg('linear_data_cache test passed')
+
+
+#* rw_cached_stream *********************************************************
+class rw_cached_stream (io.BufferedIOBase):
+    def __init__ (self, raw, align = 4096,
+            cached_data_max_size = 1024 * 1024):
+        self.raw_ = raw
+        self.lock_ = threading.Lock()
+        self.cond_ = threading.Condition(self.lock_)
+        try:
+            if not raw_.seekable(): raise IOError()
+            self.pos_ = raw_.seek(0, SEEK_CUR)
+            self.seekable_ = True
+        except IOError as e:
+            self.seekable_ = False
+        return
+    def _write_dirty_buffers (self):
+        return
+
+    def flush (self):
+        self._write_dirty_buffers()
+        self.raw_.flush()
+
+    def close (self):
+        self._write_dirty_buffers()
+        self.raw_.close()
+
+    def seekable (self):
+        return self.seekable_
+
+    def tell (self):
+        return self.pos_
+
+
