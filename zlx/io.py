@@ -498,68 +498,193 @@ class stream_cache_proxy (stream_cache):
 ################################################################################
 ################################################################################
 
+class negative_offset_error (RuntimeError): pass
+class malformed_range_error (RuntimeError): pass
+class offset_outside_block_error (RuntimeError): pass
+
+#* cached_block *************************************************************
 class cached_block:
     '''
     Base class for various cached blocks.
     '''
+
     data_block = False
     hole_block = False
     end_block = False
+
+# cached_block.__init()
     def __init__ (self, time, offset):
         self.time = time
         self.offset = offset
+
+# cached_block.contains_offset()
     def contains_offset (self, offset):
         return offset >= self.offset and offset - self.offset < self.size
 
+# cached_block.end_offset
+    @property
+    def end_offset (self):
+        return self.offset + self.size
+
+# cached_block._split()
+    def _split (self, offset):
+        if not self.contains_offset(offset):
+            raise offset_outside_block_error(offset, block)
+
+        if offset == self.offset:
+            return [ self ]
+
+        return self._split_block(offset)
+
+# cached_block._split_block()
+    def _split_block (self, offset):
+        raise NonImplementedError()
+
+# cached_block - end class
+
+#* cached_data_block ********************************************************
 class cached_data_block (cached_block):
     '''
     Cached data block
     '''
     __slots__ = 'time offset data'.split()
     data_block = True
+
+# cached_data_block.__init__()
     def __init__ (self, time, offset, data):
         cached_block.__init__(self, time, offset)
-        self.data_ = data
+        self.data = data
+
+# cached_data_block.size
     @property
     def size (self):
         return len(self.data)
+
+# cached_data_block.data_snippet()
     def data_snippet (self):
-        if len(self.data_) > 12:
-            return '{!r}...{!r}'.format(self.data_[0:8], self.data_[-4:])
-        else: return '{!r}'.format(self.data_)
+        if len(self.data) > 12:
+            return '{!r}...{!r}'.format(self.data[0:8], self.data[-4:])
+        else: return '{!r}'.format(self.data)
+
+# cached_data_block.__repr__()
     def __repr__ (self):
         return '{}(offset=0x{:X}, size=0x{:X}, time={}, data={})'.format(
                 self.__class__.__name__,
                 self.offset, len(self.data), self.time, self.data_snippet())
 
+# cached_data_block._split_block()
+    def _split_block (self, offset):
+        data_offset = offset - self.offset
+        return [
+            self.__class__(
+                time = self.time,
+                offset = self.offset,
+                data = self.data[0 : data_offset]),
+            self.__class__(
+                time = self.time,
+                offset = offset,
+                data = self.data[data_offset : ])]
 
+# cached_data_block - end
+
+#* cached_hole_block ********************************************************
 class cached_hole_block (cached_block):
     __slots__ = 'time offset size'.split()
     hole_block = True
+
+# cached_hole_block.__init__()
     def __init__ (self, time, offset, size):
         cached_block.__init__(self, time, offset)
         self.size_ = size
+
+# cached_hole_block.__repr__()
     def __repr__ (self):
         return '{}(offset=0x{:X}, size={}, time={})'.format(
                 self.__class__.__name__,
-                self.offset, self.size)
+                self.offset, self.size, self.time)
 
-class uncached_block (cached_hole_block):
-    pass
+# cached_hole_block._split_block()
+    def _split_block (self, offset):
+        return [
+            self.__class__(
+                time = self.time,
+                offset = self.offset,
+                size = offset - self.offset),
+            self.__class__(
+                time = self.time,
+                offset = offset,
+                size = self.end_offset - offset)]
+        self.size = offset - self.offset
+        return nb
 
+#* cached_end_block *********************************************************
 class cached_end_block (cached_block):
     __slots__ = 'time offset'.split()
-    hole_block = True
     end_block = True
+
+# cached_end_block.__init__()
     def __init__ (self, time, offset):
         cached_block.__init__(self, time, offset)
+
+# cached_end_block.size
     @property
     def size (self):
         return 0
+
+# cached_end_block.contains_offset()
+    def contains_offset (self, offset):
+        return offset >= self.offset
+
+# cached_end_block.__repr__()
     def __repr__ (self):
         return '{}(offset=0x{:X}, time={})'.format(
                 self.__class__.__name__,
                 self.offset, self.size, self.time)
+
+# cached_end_block._split_block()
+    def _split_block (self, offset):
+        return [
+            uncached_block(
+                offset = self.offset,
+                size = offset - self.offset),
+            self.__class__(
+                time = time,
+                offset = offset)]
+
+# cached_end_block - end class
+
+#* uncached_block ***********************************************************
+class uncached_block (cached_block):
+
+    __slots__ = 'offset size'.split()
+
+# uncached_block.__init__()
+    def __init__ (self, offset, size):
+        self.offset = offset
+        self.size = size
+
+# uncached_block.time
+    @property
+    def time (self):
+        return HISTORY_BEGIN_TIME
+
+# uncached_block.__repr__()
+    def __repr__ (self):
+        return '{}(offset=0x{:X}, size={})'.format(
+                self.__class__.__name__,
+                self.offset, self.size)
+
+# uncached_block._split_block()
+    def _split_block (self, offset):
+        return [
+            self.__class__(
+                offset = self.offset,
+                size = offset - self.offset),
+            self.__class__(
+                offset = offset,
+                size = self.end_offset - offset)]
+
+# uncached_block - end class
 
 HISTORY_BEGIN_TIME = -sys.float_info.max
 
@@ -569,47 +694,95 @@ class linear_data_cache:
     Caches data organized in a linear address space.
     Can be used for cache of files / data streams, memory layouts, etc.
     '''
+
+# linear_data_cache.__init__()
     def __init__ (self, time_source):
         self.time_source_ = time_source
         self.blocks_ = [cached_end_block(HISTORY_BEGIN_TIME, 0)]
 
+# linear_data_cache.end_block
     @property
     def end_block (self):
         return self.blocks_[-1]
 
-    def add_data (self, data, offset, time = None):
-        if time is None: time = self.time_source_()
+# linear_data_cache.end_block_index_()
+    @property
+    def end_block_index_ (self):
+        return len(self.blocks_) - 1
 
-    def __repr__ (self):
-        return 'linear-data-cache{{ {} blocks:{}}}'.format(len(self.blocks_), '\n'.join(('\n  * {!r}'.format(b) for b in self.blocks_)))
+# linear_data_cache.size
+    @property
+    def size (self):
+        '''
+        known cached size of data - includes holes
+        '''
+        return self.end_block.offset
 
+# linear_data_cache.locate_block()
     def locate_block (self, offset):
         '''
-        Retrieves the block that contains the given offset or the end block
+        Retrieves the block with its position that contains the given offset.
+        Raises error on negative offsets.
+        Returns (None, end_block_index) for offset beyond end_block.
         '''
-        for b in self.blocks_:
-            if b.contains_offset(offset): return b
-        return self.last_block
+        if offset < 0: raise negative_offset_error(offset)
+        for i in range(len(self.blocks_)):
+            b = self.blocks_[i]
+            if b.contains_offset(offset): return (b, i)
+        raise RuntimeError("BUG: should have found a block")
 
+# linear_data_cache._split_block()
+    def _split_block (self, offset):
+        '''
+        Splits the block containing the offset and returns the index
+        of the new block starting at the given offset.
+        If offset is out of range, it returns None (this is true for
+        the end block as well).
+        If the given offset is the beginning of and existing block
+        then the index of that block is returned
+        '''
+        b, i = self.locate_block(offset)
+        sbl = b._split(offset)
+        self.blocks_[i : i + 1] = sbl
+        return i + len(sbl) - 1
+
+    def _add_block (self, blk):
+        start_block_index = self._split_block(blk.offset)
+        end_block_index = self._split_block(blk.end_offset)
+        self.blocks_[start_block_index : end_block_index] = [ blk ]
+
+    def add_data (self, data, offset, time = None):
+        if time is None: time = self.time_source_()
+        self._add_block(cached_data_block(time, offset, data))
+
+    def __repr__ (self):
+        return 'linear-data-cache(nblk={}{})'.format(len(self.blocks_), ','.join(('\n  {!r}'.format(b) for b in self.blocks_)))
+
+#* cached_stream_time_source ************************************************
 try:
     time.monotonic()
     cached_stream_time_source = time.monotonic
 except:
     cached_stream_time_source = time.time
 
-def _ldc_test_time_source (time_seed):
-    time_seed[0] += 1
-    return time_seed[0]
+#* linear_data_cache_test ***************************************************
 
 def linear_data_cache_test ():
+    def _ldc_test_time_source (time_seed):
+        time_seed[0] += 1
+        return time_seed[0]
     tsrc = lambda ts = [0]: _ldc_test_time_source(ts)
     assert tsrc() == 1
     assert tsrc() == 2
+
     ldc = linear_data_cache(tsrc)
     omsg('initial ldc: {!r}', ldc)
     assert ldc.end_block.offset == 0
-    omsg('linear_data_cache test passed')
 
+    ldc.add_data(b'abc', 10)
+    omsg('add "abc" at 10: {!r}', ldc)
+
+    omsg('linear_data_cache test passed')
 
 #* rw_cached_stream *********************************************************
 class rw_cached_stream (io.BufferedIOBase):
