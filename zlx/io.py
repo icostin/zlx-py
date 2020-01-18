@@ -508,9 +508,10 @@ class cached_block:
     Base class for various cached blocks.
     '''
 
-    data_block = False
-    hole_block = False
-    end_block = False
+    is_uncached_block = False
+    is_data_block = False
+    is_hole_block = False
+    is_end_block = False
 
 # cached_block.__init()
     def __init__ (self, time, offset):
@@ -534,11 +535,20 @@ class cached_block:
         if offset == self.offset:
             return [ self ]
 
-        return self._split_block(offset)
+        return self._split_block(offset = offset)
 
 # cached_block._split_block()
     def _split_block (self, offset):
         raise NonImplementedError()
+
+# cached_block.__eq__()
+    def __eq__ (self, other):
+        if self.__class__ is not other.__class__:
+            return False
+        for field in self.__slots__:
+            if getattr(self, field) != getattr(other, field):
+                return False
+        return True
 
 # cached_block - end class
 
@@ -548,7 +558,7 @@ class cached_data_block (cached_block):
     Cached data block
     '''
     __slots__ = 'time offset data'.split()
-    data_block = True
+    is_data_block = True
 
 # cached_data_block.__init__()
     def __init__ (self, time, offset, data):
@@ -590,7 +600,7 @@ class cached_data_block (cached_block):
 #* cached_hole_block ********************************************************
 class cached_hole_block (cached_block):
     __slots__ = 'time offset size'.split()
-    hole_block = True
+    is_hole_block = True
 
 # cached_hole_block.__init__()
     def __init__ (self, time, offset, size):
@@ -620,11 +630,7 @@ class cached_hole_block (cached_block):
 #* cached_end_block *********************************************************
 class cached_end_block (cached_block):
     __slots__ = 'time offset'.split()
-    end_block = True
-
-# cached_end_block.__init__()
-    def __init__ (self, time, offset):
-        cached_block.__init__(self, time, offset)
+    is_end_block = True
 
 # cached_end_block.size
     @property
@@ -639,7 +645,7 @@ class cached_end_block (cached_block):
     def __repr__ (self):
         return '{}(offset=0x{:X}, time={})'.format(
                 self.__class__.__name__,
-                self.offset, self.size, self.time)
+                self.offset, self.time)
 
 # cached_end_block._split_block()
     def _split_block (self, offset):
@@ -648,7 +654,7 @@ class cached_end_block (cached_block):
                 offset = self.offset,
                 size = offset - self.offset),
             self.__class__(
-                time = time,
+                time = self.time,
                 offset = offset)]
 
 # cached_end_block - end class
@@ -657,6 +663,8 @@ class cached_end_block (cached_block):
 class uncached_block (cached_block):
 
     __slots__ = 'offset size'.split()
+
+    is_uncached_block = True
 
 # uncached_block.__init__()
     def __init__ (self, offset, size):
@@ -700,6 +708,10 @@ class linear_data_cache:
         self.time_source_ = time_source
         self.blocks_ = [cached_end_block(HISTORY_BEGIN_TIME, 0)]
 
+    @property
+    def block_count (self):
+        return len(self.blocks_)
+
 # linear_data_cache.end_block
     @property
     def end_block (self):
@@ -742,18 +754,48 @@ class linear_data_cache:
         then the index of that block is returned
         '''
         b, i = self.locate_block(offset)
-        sbl = b._split(offset)
+        sbl = b._split(offset = offset)
         self.blocks_[i : i + 1] = sbl
         return i + len(sbl) - 1
 
+# linear_data_cache._add_block()
     def _add_block (self, blk):
-        start_block_index = self._split_block(blk.offset)
-        end_block_index = self._split_block(blk.end_offset)
+        start_block_index = self._split_block(offset = blk.offset)
+        end_block_index = self._split_block(offset = blk.end_offset)
         self.blocks_[start_block_index : end_block_index] = [ blk ]
+        if self.blocks_[end_block_index].is_end_block:
+            self.blocks_[end_block_index].time = blk.time
 
+# linear_data_cache.add_data()
     def add_data (self, data, offset, time = None):
         if time is None: time = self.time_source_()
         self._add_block(cached_data_block(time, offset, data))
+
+# linear_data_cache.del_range()
+    def del_range (self, offset, size = None, end_offset = None):
+        if size is not None:
+            end_offset = offset + size
+        if end_offset >= self.size:
+            end_offset = self.size
+        sx = self._split_block(offset)
+        if sx > 0 and self.blocks_[sx - 1].is_uncached_block:
+            sx -= 1
+            offset = self.blocks_[sx].offset
+        ex = self._split_block(end_offset)
+        if self.blocks_[ex].is_uncached_block:
+            end_offset = self.blocks_[ex].end_offset
+            ex += 1
+        self.blocks_[sx : ex] = [
+                uncached_block(
+                    offset = offset,
+                    size = end_offset - offset) ]
+
+# linear_data_cache.blocks()
+    def blocks (self):
+        '''
+        Returns iterable that goes through all blocks from offset 0 to known EOF
+        '''
+        return self.blocks_
 
     def __repr__ (self):
         return 'linear-data-cache(nblk={}{})'.format(len(self.blocks_), ','.join(('\n  {!r}'.format(b) for b in self.blocks_)))
@@ -768,6 +810,7 @@ except:
 #* linear_data_cache_test ***************************************************
 
 def linear_data_cache_test ():
+
     def _ldc_test_time_source (time_seed):
         time_seed[0] += 1
         return time_seed[0]
@@ -775,12 +818,41 @@ def linear_data_cache_test ():
     assert tsrc() == 1
     assert tsrc() == 2
 
-    ldc = linear_data_cache(tsrc)
-    omsg('initial ldc: {!r}', ldc)
-    assert ldc.end_block.offset == 0
+    def check (ldc, bl):
+        if ldc.block_count != len(bl):
+            raise RuntimeError('expecting {} blocks, not {}'.format(len(bl), ldc.block_count))
+        for i in range(ldc.block_count):
+            if not ldc.blocks_[i] == bl[i]:
+                raise RuntimeError('expecting {!r} not {!r}'.format(bl[i], ldc.blocks_[i]))
 
-    ldc.add_data(b'abc', 10)
-    omsg('add "abc" at 10: {!r}', ldc)
+    ldc = linear_data_cache(tsrc)
+    dmsg('initial ldc: {!r}', ldc)
+    assert ldc.end_block.offset == 0
+    check(ldc, [cached_end_block(HISTORY_BEGIN_TIME, 0)])
+
+    ldc.add_data(data = b'abcde', offset = 10)
+    dmsg('add "abcde" at 10: {!r}', ldc)
+    check(ldc, [
+        uncached_block(0, 10),
+        cached_data_block(time = 3, offset = 10, data = b'abcde'),
+        cached_end_block(time = 3, offset = 15)])
+
+    ldc.del_range(offset = 12, end_offset = 14)
+    omsg('del [12,14): {!r}', ldc)
+    check(ldc, [
+        uncached_block(0, 10),
+        cached_data_block(time = 3, offset = 10, data = b'ab'),
+        uncached_block(12, 2),
+        cached_data_block(time = 3, offset = 14, data = b'e'),
+        cached_end_block(time = 3, offset = 15)])
+
+    ldc.del_range(offset = 13, size = 1000)
+    omsg('del [13, 1013): {!r}', ldc)
+    check(ldc, [
+        uncached_block(0, 10),
+        cached_data_block(time = 3, offset = 10, data = b'ab'),
+        uncached_block(12, 3),
+        cached_end_block(time = 3, offset = 15)])
 
     omsg('linear_data_cache test passed')
 
